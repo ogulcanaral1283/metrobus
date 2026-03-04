@@ -1,0 +1,31 @@
+{
+  "name": "metrobus-smart-traffic",
+  "version": "1.0.0",
+  "description": "İstanbul Metrobüs Akıllı Trafik Yönetim Sistemi",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "docker-compose up -d && concurrently \"npm run dev:engine\" \"npm run dev:api\" \"npm run dev:hud\" \"npm run dev:dashboard\"",
+    "dev:ingestion": "npm -w packages/data-ingestion run dev",
+    "dev:engine": "npm -w packages/realtime-engine run dev",
+    "dev:decision": "npm -w packages/decision-engine run dev",
+    "dev:api": "npm -w packages/api-gateway run dev",
+    "dev:hud": "npm -w packages/driver-hud run dev",
+    "dev:dashboard": "npm -w packages/dashboard run dev",
+    "dev:simulate": "npx tsx scripts/simulate-vehicles.ts",
+    "build": "npm -ws run build",
+    "test": "npm -ws run test",
+    "lint": "npm -ws run lint",
+    "clean": "npm -ws run clean"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

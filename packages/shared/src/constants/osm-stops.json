@@ -1,0 +1,1872 @@
+[
+  {
+    "name": "Cumhuriyet Mahallesi",
+    "lat": 41.0154421,
+    "lon": 28.6413758,
+    "tags": {
+      "bus": "yes",
+      "name": "Cumhuriyet Mahallesi",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900421",
+      "website": "https://iett.istanbul/StationDetail?dkod=900421"
+    }
+  },
+  {
+    "name": "Cumhuriyet Mahallesi",
+    "lat": 41.0152426,
+    "lon": 28.6421734,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cumhuriyet Mahallesi",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900422",
+      "website": "https://iett.istanbul/StationDetail?dkod=900422"
+    }
+  },
+  {
+    "name": "Beylikdüzü Belediye",
+    "lat": 41.0123671,
+    "lon": 28.6497187,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Beylikdüzü Belediye",
+      "name:ar": "بلدية بييلك دوزو",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900412",
+      "website": "https://iett.istanbul/StationDetail?dkod=900412"
+    }
+  },
+  {
+    "name": "Beylikdüzü Belediye",
+    "lat": 41.0126099,
+    "lon": 28.6488069,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Beylikdüzü Belediye",
+      "name:ar": "بلدية بييلك دوزو",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900411",
+      "website": "https://iett.istanbul/StationDetail?dkod=900411"
+    }
+  },
+  {
+    "name": "Güzelyurt",
+    "lat": 41.0065416,
+    "lon": 28.6650232,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Güzelyurt",
+      "name:ar": "غوزيليورت",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900391",
+      "website": "https://iett.istanbul/StationDetail?dkod=900391"
+    }
+  },
+  {
+    "name": "Beylikdüzü",
+    "lat": 41.0096127,
+    "lon": 28.6570764,
+    "tags": {
+      "bus": "yes",
+      "name": "Beylikdüzü",
+      "name:ar": "بييلك دوزو",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900402",
+      "website": "https://iett.istanbul/StationDetail?dkod=900402"
+    }
+  },
+  {
+    "name": "Beylikdüzü",
+    "lat": 41.0098568,
+    "lon": 28.6561403,
+    "tags": {
+      "bus": "yes",
+      "name": "Beylikdüzü",
+      "name:ar": "بييلك دوزو",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900401",
+      "website": "https://iett.istanbul/StationDetail?dkod=900401"
+    }
+  },
+  {
+    "name": "Güzelyurt",
+    "lat": 41.0064291,
+    "lon": 28.6659231,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Güzelyurt",
+      "name:ar": "غوزيليورت",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900392",
+      "website": "https://iett.istanbul/StationDetail?dkod=900392"
+    }
+  },
+  {
+    "name": "Haramidere",
+    "lat": 41.005891,
+    "lon": 28.6726999,
+    "tags": {
+      "bus": "yes",
+      "name": "Haramidere",
+      "name:ar": "حرامي ديرة",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900381",
+      "website": "https://iett.istanbul/StationDetail?dkod=900381"
+    }
+  },
+  {
+    "name": "Haramidere",
+    "lat": 41.0059678,
+    "lon": 28.6732793,
+    "tags": {
+      "bus": "yes",
+      "name": "Haramidere",
+      "name:ar": "حرامي ديرة",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900382",
+      "website": "https://iett.istanbul/StationDetail?dkod=900382"
+    }
+  },
+  {
+    "name": "Avcılar Merkez-Üniversite Kampüsü",
+    "lat": 40.9832492,
+    "lon": 28.7266736,
+    "tags": {
+      "bus": "yes",
+      "name": "Avcılar Merkez-Üniversite Kampüsü",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900332",
+      "website": "https://iett.istanbul/StationDetail?dkod=900332"
+    }
+  },
+  {
+    "name": "Avcılar Merkez-Üniversite Kampüsü",
+    "lat": 40.9834238,
+    "lon": 28.7260748,
+    "tags": {
+      "bus": "yes",
+      "name": "Avcılar Merkez-Üniversite Kampüsü",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900331",
+      "website": "https://iett.istanbul/StationDetail?dkod=900331"
+    }
+  },
+  {
+    "name": "Avcılar Merkez-Üniversite Kampüsü",
+    "lat": 40.9833198,
+    "lon": 28.7263903,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Avcılar Merkez-Üniversite Kampüsü",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "ref": "900331;900332",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900331;https://iett.istanbul/StationDetail?dkod=900332"
+    }
+  },
+  {
+    "name": "Saadetdere Mahallesi",
+    "lat": 40.9997234,
+    "lon": 28.6930756,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Saadetdere Mahallesi",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900362;900361",
+      "shelter": "yes"
+    }
+  },
+  {
+    "name": "Saadetdere Mahallesi",
+    "lat": 40.9997701,
+    "lon": 28.6930006,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Saadetdere Mahallesi",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900362",
+      "website": "https://iett.istanbul/StationDetail?dkod=900362"
+    }
+  },
+  {
+    "name": "Saadetdere Mahallesi",
+    "lat": 40.9997945,
+    "lon": 28.6921368,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Saadetdere Mahallesi",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900361",
+      "website": "https://iett.istanbul/StationDetail?dkod=900361"
+    }
+  },
+  {
+    "name": "Haramidere Sanayi",
+    "lat": 41.0046939,
+    "lon": 28.684335,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Haramidere Sanayi",
+      "name:ar": "حرامي ديرة الصناعية",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900371",
+      "website": "https://iett.istanbul/StationDetail?dkod=900371"
+    }
+  },
+  {
+    "name": "Haramidere Sanayi",
+    "lat": 41.0043869,
+    "lon": 28.6851377,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Haramidere Sanayi",
+      "name:ar": "حرامي ديرة الصناعية",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900372",
+      "website": "https://iett.istanbul/StationDetail?dkod=900372"
+    }
+  },
+  {
+    "name": "Mustafa Kemalpaşa",
+    "lat": 40.9950109,
+    "lon": 28.7060398,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Mustafa Kemalpaşa",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900351",
+      "website": "https://iett.istanbul/StationDetail?dkod=900351"
+    }
+  },
+  {
+    "name": "Mustafa Kemalpaşa",
+    "lat": 40.994619,
+    "lon": 28.7069685,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Mustafa Kemalpaşa",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900352",
+      "website": "https://iett.istanbul/StationDetail?dkod=900352"
+    }
+  },
+  {
+    "name": "Cihangir - Üniv.mah.",
+    "lat": 40.9907635,
+    "lon": 28.7134625,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cihangir - Üniv.mah.",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900341",
+      "website": "https://iett.istanbul/StationDetail?dkod=900341",
+      "wikidata": "Q109679415",
+      "wikipedia": "tr:Cihangir-Üniversite Mahallesi Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Cihangir - Üniv.mah.",
+    "lat": 40.9905399,
+    "lon": 28.7140284,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cihangir - Üniv.mah.",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900342",
+      "website": "https://iett.istanbul/StationDetail?dkod=900342"
+    }
+  },
+  {
+    "name": "Beylikdüzü Sondurak",
+    "lat": 41.0218176,
+    "lon": 28.6254741,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Beylikdüzü Sondurak",
+      "name:ar": "محطة بييلك دوزو الأخيرة",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "ref": "900442",
+      "website": "https://iett.istanbul/StationDetail?dkod=900442"
+    }
+  },
+  {
+    "name": "Beykent",
+    "lat": 41.0195361,
+    "lon": 28.6307252,
+    "tags": {
+      "bus": "yes",
+      "name": "Beykent",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900431",
+      "website": "https://iett.istanbul/StationDetail?dkod=900431"
+    }
+  },
+  {
+    "name": "Beykent",
+    "lat": 41.0194389,
+    "lon": 28.6311682,
+    "tags": {
+      "bus": "yes",
+      "name": "Beykent",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900432",
+      "website": "https://iett.istanbul/StationDetail?dkod=900432"
+    }
+  },
+  {
+    "name": "Şükrübey",
+    "lat": 40.980113,
+    "lon": 28.7317193,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Şükrübey",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900321",
+      "website": "https://iett.istanbul/StationDetail?dkod=900321"
+    }
+  },
+  {
+    "name": "Şükrübey",
+    "lat": 40.9796187,
+    "lon": 28.7327341,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Şükrübey",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900322",
+      "website": "https://iett.istanbul/StationDetail?dkod=900322"
+    }
+  },
+  {
+    "name": "Büyükşehir Belediyesi Sosyal Tesisleri",
+    "lat": 40.9777941,
+    "lon": 28.744498,
+    "tags": {
+      "alt_name": "İBB Sosyal Tesisler",
+      "bus": "yes",
+      "name": "Büyükşehir Belediyesi Sosyal Tesisleri",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900311",
+      "website": "https://iett.istanbul/StationDetail?dkod=900311"
+    }
+  },
+  {
+    "name": "Büyükşehir Belediyesi Sosyal Tesisleri",
+    "lat": 40.9780868,
+    "lon": 28.7451939,
+    "tags": {
+      "alt_name": "İBB Sosyal Tesisler",
+      "bus": "yes",
+      "name": "Büyükşehir Belediyesi Sosyal Tesisleri",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900312",
+      "website": "https://iett.istanbul/StationDetail?dkod=900312"
+    }
+  },
+  {
+    "name": "Küçükçekmece",
+    "lat": 40.9863704,
+    "lon": 28.7696721,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Küçükçekmece",
+      "name:tr": "Küçükçekmece",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900301"
+    }
+  },
+  {
+    "name": "Küçükçekmece",
+    "lat": 40.9865458,
+    "lon": 28.7703336,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Küçükçekmece",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900302",
+      "website": "https://iett.istanbul/StationDetail?dkod=900302"
+    }
+  },
+  {
+    "name": "Cennet Mahallesi",
+    "lat": 40.9854181,
+    "lon": 28.7831768,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cennet Mahallesi",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900292",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900292"
+    }
+  },
+  {
+    "name": "Cennet Mahallesi",
+    "lat": 40.985292,
+    "lon": 28.7826843,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cennet Mahallesi",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900291",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900291"
+    }
+  },
+  {
+    "name": "Florya",
+    "lat": 40.9868707,
+    "lon": 28.7888737,
+    "tags": {
+      "bench": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Florya",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900282",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900282"
+    }
+  },
+  {
+    "name": "Florya",
+    "lat": 40.9865232,
+    "lon": 28.7881632,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Florya",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900281",
+      "website": "https://iett.istanbul/StationDetail?dkod=900281"
+    }
+  },
+  {
+    "name": "Beşyol",
+    "lat": 40.9940111,
+    "lon": 28.7948098,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Beşyol",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900271",
+      "website": "https://iett.istanbul/StationDetail?dkod=900271"
+    }
+  },
+  {
+    "name": "Beşyol",
+    "lat": 40.9946746,
+    "lon": 28.7949077,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Beşyol",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900272",
+      "website": "https://iett.istanbul/StationDetail?dkod=900272"
+    }
+  },
+  {
+    "name": "Sefaköy",
+    "lat": 40.99876,
+    "lon": 28.7986942,
+    "tags": {
+      "bench": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Sefaköy",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900262",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900262"
+    }
+  },
+  {
+    "name": "Sefaköy",
+    "lat": 40.99818,
+    "lon": 28.7979256,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Sefaköy",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900261",
+      "website": "https://iett.istanbul/StationDetail?dkod=900261"
+    }
+  },
+  {
+    "name": "Yenibosna",
+    "lat": 40.9924576,
+    "lon": 28.833693,
+    "tags": {
+      "bus": "yes",
+      "name": "Yenibosna",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900252",
+      "website": "https://iett.istanbul/StationDetail?dkod=900252"
+    }
+  },
+  {
+    "name": "Yenibosna",
+    "lat": 40.9925023,
+    "lon": 28.8316149,
+    "tags": {
+      "bus": "yes",
+      "name": "Yenibosna",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900251",
+      "website": "https://iett.istanbul/StationDetail?dkod=900251"
+    }
+  },
+  {
+    "name": "Şirinevler",
+    "lat": 40.9916955,
+    "lon": 28.8457211,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Şirinevler",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900241",
+      "website": "https://iett.istanbul/StationDetail?dkod=900241"
+    }
+  },
+  {
+    "name": "Şirinevler",
+    "lat": 40.9917268,
+    "lon": 28.8468846,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Şirinevler",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900242",
+      "website": "https://iett.istanbul/StationDetail?dkod=900242"
+    }
+  },
+  {
+    "name": "Bahçelievler",
+    "lat": 40.9952169,
+    "lon": 28.8639067,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Bahçelievler",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900232",
+      "website": "https://iett.istanbul/StationDetail?dkod=900232"
+    }
+  },
+  {
+    "name": "Bahçelievler",
+    "lat": 40.9949189,
+    "lon": 28.8631591,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Bahçelievler",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900231",
+      "website": "https://iett.istanbul/StationDetail?dkod=900231"
+    }
+  },
+  {
+    "name": "İncirli",
+    "lat": 40.9980934,
+    "lon": 28.8734765,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "lit": "yes",
+      "name": "İncirli",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900221",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900221",
+      "wheelchair": "limited"
+    }
+  },
+  {
+    "name": "İncirli",
+    "lat": 40.9984283,
+    "lon": 28.8744136,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "lit": "yes",
+      "name": "İncirli",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900222",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900221",
+      "wheelchair": "limited"
+    }
+  },
+  {
+    "name": "Zeytinburnu",
+    "lat": 41.0036949,
+    "lon": 28.8913808,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Zeytinburnu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900212",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900212",
+      "wheelchair": "yes"
+    }
+  },
+  {
+    "name": "Zeytinburnu",
+    "lat": 41.0032266,
+    "lon": 28.89062,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Zeytinburnu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900211",
+      "website": "https://iett.istanbul/StationDetail?dkod=900211"
+    }
+  },
+  {
+    "name": "Merter",
+    "lat": 41.0080164,
+    "lon": 28.8978876,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Merter",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900202",
+      "website": "https://iett.istanbul/StationDetail?dkod=900202"
+    }
+  },
+  {
+    "name": "Merter",
+    "lat": 41.0075579,
+    "lon": 28.8973383,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Merter",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900201",
+      "website": "https://iett.istanbul/StationDetail?dkod=900201"
+    }
+  },
+  {
+    "name": "Cevizlibağ",
+    "lat": 41.016979,
+    "lon": 28.9117377,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cevizlibağ",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900192",
+      "website": "https://iett.istanbul/StationDetail?dkod=900192",
+      "wheelchair": "limited"
+    }
+  },
+  {
+    "name": "Cevizlibağ",
+    "lat": 41.0165595,
+    "lon": 28.9111949,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Cevizlibağ",
+      "network": "İETT",
+      "network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900191",
+      "website": "https://iett.istanbul/StationDetail?dkod=900191"
+    }
+  },
+  {
+    "name": "Topkapı - Şehit Mustafa Cambaz",
+    "lat": 41.0202205,
+    "lon": 28.9172415,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Topkapı - Şehit Mustafa Cambaz",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900181",
+      "website": "https://iett.istanbul/StationDetail?dkod=900181"
+    }
+  },
+  {
+    "name": "Topkapı - Şehit Mustafa Cambaz",
+    "lat": 41.0202697,
+    "lon": 28.9171833,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Topkapı - Şehit Mustafa Cambaz",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900182",
+      "website": "https://iett.istanbul/StationDetail?dkod=900182"
+    }
+  },
+  {
+    "name": "Bayrampaşa - Maltepe / Koç Üniversitesi Hastanesi",
+    "lat": 41.0235335,
+    "lon": 28.921197,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Bayrampaşa - Maltepe / Koç Üniversitesi Hastanesi",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900171",
+      "website": "https://iett.istanbul/StationDetail?dkod=900172",
+      "wikidata": "Q110056402",
+      "wikipedia": "tr:Bayrampaşa-Maltepe/Koç Üniversitesi Hastanesi Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Bayrampaşa - Maltepe / Koç Üniversitesi Hastanesi",
+    "lat": 41.024095,
+    "lon": 28.9215528,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Bayrampaşa - Maltepe / Koç Üniversitesi Hastanesi",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900172",
+      "website": "https://iett.istanbul/StationDetail?dkod=900172",
+      "wikidata": "Q110056402",
+      "wikipedia": "tr:Bayrampaşa-Maltepe/Koç Üniversitesi Hastanesi Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Edirnekapı",
+    "lat": 41.0331979,
+    "lon": 28.9292344,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Edirnekapı",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900161",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900161"
+    }
+  },
+  {
+    "name": "Edirnekapı",
+    "lat": 41.0337289,
+    "lon": 28.929965,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Edirnekapı",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900162",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900162"
+    }
+  },
+  {
+    "name": "Ayvansaray Eyüpsultan",
+    "lat": 41.0395577,
+    "lon": 28.9384376,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Ayvansaray Eyüpsultan",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900152",
+      "website": "https://iett.istanbul/StationDetail?dkod=900152"
+    }
+  },
+  {
+    "name": "Ayvansaray Eyüpsultan",
+    "lat": 41.0387969,
+    "lon": 28.937756,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Ayvansaray Eyüpsultan",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900151",
+      "website": "https://iett.istanbul/StationDetail?dkod=900151"
+    }
+  },
+  {
+    "name": "Söğütlüçeşme",
+    "lat": 40.9916216,
+    "lon": 29.0377008,
+    "tags": {
+      "bus": "yes",
+      "name": "Söğütlüçeşme",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900011",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900011&stationname=S%C3%96%C4%9E%C3%9CTL%C3%9C%C3%87E%C5%9EME-Kad%C4%B1k%C3%B6y"
+    }
+  },
+  {
+    "name": "Söğütlüçeşme",
+    "lat": 40.9920083,
+    "lon": 29.0378226,
+    "tags": {
+      "bus": "yes",
+      "name": "Söğütlüçeşme",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900012",
+      "website": "https://iett.istanbul/StationDetail?dkod=900012"
+    }
+  },
+  {
+    "name": "Söğütlüçeşme",
+    "lat": 40.9916059,
+    "lon": 29.037651,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "lit": "yes",
+      "name": "Söğütlüçeşme",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900011",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900011&stationname=S%C3%96%C4%9E%C3%9CTL%C3%9C%C3%87E%C5%9EME-Kad%C4%B1k%C3%B6y",
+      "wikidata": "Q48802642",
+      "wikimedia_commons": "Category:Söğütlüçeşme Metrobus Station",
+      "wikipedia": "tr:Söğütlüçeşme Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Söğütlüçeşme",
+    "lat": 40.9920226,
+    "lon": 29.0378533,
+    "tags": {
+      "bin": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Söğütlüçeşme",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900012",
+      "website": "https://iett.istanbul/StationDetail?dkod=900011&stationname=S%C3%96%C4%9E%C3%9CTL%C3%9C%C3%87E%C5%9EME-Kad%C4%B1k%C3%B6y",
+      "wikidata": "Q48802642",
+      "wikimedia_commons": "Category:Söğütlüçeşme Metrobus Station",
+      "wikipedia": "tr:Söğütlüçeşme Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Fikirtepe",
+    "lat": 40.9937164,
+    "lon": 29.0473178,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "lit": "yes",
+      "name": "Fikirtepe",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900021;900022",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900021;https://iett.istanbul/StationDetail?dkod=900022",
+      "wikidata": "Q48802661",
+      "wikipedia": "tr:Fikirtepe Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Fikirtepe",
+    "lat": 40.9938082,
+    "lon": 29.0475885,
+    "tags": {
+      "bus": "yes",
+      "name": "Fikirtepe",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900021",
+      "website": "https://iett.istanbul/StationDetail?dkod=900021",
+      "wikidata": "Q48802661",
+      "wikipedia": "tr:Fikirtepe Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Fikirtepe",
+    "lat": 40.9936123,
+    "lon": 29.0470126,
+    "tags": {
+      "bus": "yes",
+      "name": "Fikirtepe",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900022",
+      "website": "https://iett.istanbul/StationDetail?dkod=900022",
+      "wikidata": "Q48802661",
+      "wikipedia": "tr:Fikirtepe Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Uzunçayır",
+    "lat": 40.9990338,
+    "lon": 29.0566706,
+    "tags": {
+      "bus": "yes",
+      "name": "Uzunçayır",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900031",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900031",
+      "wikidata": "Q48802664",
+      "wikipedia": "tr:Uzunçayır Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Uzunçayır",
+    "lat": 40.9988508,
+    "lon": 29.0565214,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "highway": "bus_stop",
+      "lit": "yes",
+      "name": "Uzunçayır",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900031;900032",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900031;https://iett.istanbul/StationDetail?dkod=900032",
+      "wheelchair": "no",
+      "wikidata": "Q48802664",
+      "wikipedia": "tr:Uzunçayır Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Uzunçayır",
+    "lat": 40.9986206,
+    "lon": 29.056334,
+    "tags": {
+      "bus": "yes",
+      "name": "Uzunçayır",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900032",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900032",
+      "wikidata": "Q48802664",
+      "wikipedia": "tr:Uzunçayır Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Acıbadem",
+    "lat": 41.0148724,
+    "lon": 29.0567804,
+    "tags": {
+      "bus": "yes",
+      "name": "Acıbadem",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900041",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900041"
+    }
+  },
+  {
+    "name": "Acıbadem",
+    "lat": 41.0144005,
+    "lon": 29.0575861,
+    "tags": {
+      "bus": "yes",
+      "name": "Acıbadem",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900042",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900042"
+    }
+  },
+  {
+    "name": "Halıcıoğlu",
+    "lat": 41.0485647,
+    "lon": 28.9461655,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "name": "Halıcıoğlu",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900141",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900141;https://iett.istanbul/StationDetail?dkod=900141",
+      "wheelchair": "limited"
+    }
+  },
+  {
+    "name": "Halıcıoğlu",
+    "lat": 41.0488257,
+    "lon": 28.9463607,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Halıcıoğlu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "public_transport": "platform"
+    }
+  },
+  {
+    "name": "Halıcıoğlu",
+    "lat": 41.0491205,
+    "lon": 28.9466187,
+    "tags": {
+      "bench": "yes",
+      "bin": "yes",
+      "bus": "yes",
+      "name": "Halıcıoğlu",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900142",
+      "shelter": "yes",
+      "website": "https://iett.istanbul/StationDetail?dkod=900141;https://iett.istanbul/StationDetail?dkod=900142",
+      "wheelchair": "limited"
+    }
+  },
+  {
+    "name": "Okmeydanı",
+    "lat": 41.0562446,
+    "lon": 28.9608751,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Okmeydanı",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900131",
+      "website": "https://iett.istanbul/StationDetail?dkod=900131"
+    }
+  },
+  {
+    "name": "Okmeydanı",
+    "lat": 41.0566936,
+    "lon": 28.9614207,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Okmeydanı",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900132",
+      "website": "https://iett.istanbul/StationDetail?dkod=900132"
+    }
+  },
+  {
+    "name": "Darülaceze - Perpa",
+    "lat": 41.0623327,
+    "lon": 28.9676634,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Darülaceze - Perpa",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900122",
+      "website": "https://iett.istanbul/StationDetail?dkod=900122",
+      "wheelchair": "yes",
+      "wikidata": "Q110044007",
+      "wikipedia": "tr:Darülaceze-Perpa Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Darülaceze - Perpa",
+    "lat": 41.061901,
+    "lon": 28.9674171,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Darülaceze - Perpa",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900121",
+      "website": "https://iett.istanbul/StationDetail?dkod=900121",
+      "wheelchair": "yes",
+      "wikidata": "Q110044007",
+      "wikipedia": "tr:Darülaceze-Perpa Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Okmeydanı Hastane Metrobüs durağı",
+    "lat": 41.0673763,
+    "lon": 28.9760168,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Okmeydanı Hastane Metrobüs durağı",
+      "name:İETT": "Okmeydanı Hastane",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900111",
+      "ref_name": "Okmeydanı Hastane",
+      "website": "https://iett.istanbul/StationDetail?dkod=900111",
+      "wheelchair": "yes"
+    }
+  },
+  {
+    "name": "Okmeydanı Hastane Metrobüs durağı",
+    "lat": 41.0674685,
+    "lon": 28.9765993,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Okmeydanı Hastane Metrobüs durağı",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900112",
+      "ref_name": "Okmeydanı Hastane",
+      "website": "https://iett.istanbul/StationDetail?dkod=900112",
+      "wheelchair": "yes"
+    }
+  },
+  {
+    "name": "Çağlayan",
+    "lat": 41.0673265,
+    "lon": 28.9805785,
+    "tags": {
+      "alt_name": "Çağlayan Metrobüs durağı",
+      "bus": "yes",
+      "name": "Çağlayan",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900101",
+      "website": "https://iett.istanbul/StationDetail?dkod=900101"
+    }
+  },
+  {
+    "name": "Çağlayan",
+    "lat": 41.0673726,
+    "lon": 28.9815307,
+    "tags": {
+      "alt_name": "Çağlayan Metrobüs durağı",
+      "bus": "yes",
+      "name": "Çağlayan",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900102",
+      "website": "https://iett.istanbul/StationDetail?dkod=900102"
+    }
+  },
+  {
+    "name": "Mecidiyeköy",
+    "lat": 41.0668482,
+    "lon": 28.9912386,
+    "tags": {
+      "bus": "yes",
+      "name": "Mecidiyeköy",
+      "network": "Metrobus (Istanbul)",
+      "operator": "İETT",
+      "public_transport": "stop_position",
+      "ref": "900091",
+      "website": "https://iett.istanbul/StationDetail?dkod=900091"
+    }
+  },
+  {
+    "name": "Mecidiyeköy",
+    "lat": 41.0669107,
+    "lon": 28.9918981,
+    "tags": {
+      "bus": "yes",
+      "name": "Mecidiyeköy",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900092",
+      "website": "https://iett.istanbul/StationDetail?dkod=900092"
+    }
+  },
+  {
+    "name": "15 Temmuz Şehitler Köprüsü",
+    "lat": 41.0350962,
+    "lon": 29.0436227,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "15 Temmuz Şehitler Köprüsü",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900072",
+      "website": "https://iett.istanbul/StationDetail?dkod=900072",
+      "wheelchair": "yes"
+    }
+  },
+  {
+    "name": "15 Temmuz Şehitler Köprüsü",
+    "lat": 41.0351033,
+    "lon": 29.0437178,
+    "tags": {
+      "bus": "yes",
+      "name": "15 Temmuz Şehitler Köprüsü",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position"
+    }
+  },
+  {
+    "name": "15 Temmuz Şehitler Köprüsü",
+    "lat": 41.0368124,
+    "lon": 29.0435397,
+    "tags": {
+      "bus": "yes",
+      "name": "15 Temmuz Şehitler Köprüsü",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900071"
+    }
+  },
+  {
+    "name": "15 Temmuz Şehitler Köprüsü",
+    "lat": 41.0368214,
+    "lon": 29.043628,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "layer": "1",
+      "name": "15 Temmuz Şehitler Köprüsü",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "ref": "900071"
+    }
+  },
+  {
+    "name": "Zincirlikuyu",
+    "lat": 41.0658887,
+    "lon": 29.0128885,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Zincirlikuyu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900082",
+      "website": "https://iett.istanbul/StationDetail?dkod=900082",
+      "wheelchair": "yes"
+    }
+  },
+  {
+    "name": "Zincirlikuyu",
+    "lat": 41.0664494,
+    "lon": 29.0131017,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Zincirlikuyu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "public_transport:version": "2",
+      "ref": "900081",
+      "website": "https://iett.istanbul/StationDetail?dkod=900081",
+      "wheelchair": "yes"
+    }
+  },
+  {
+    "name": "Zincirlikuyu",
+    "lat": 41.0659364,
+    "lon": 29.0129203,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Zincirlikuyu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900082",
+      "website": "https://iett.istanbul/StationDetail?dkod=900082"
+    }
+  },
+  {
+    "name": "Zincirlikuyu",
+    "lat": 41.0664044,
+    "lon": 29.0130926,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Zincirlikuyu",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "public_transport:version": "2",
+      "ref": "900081",
+      "website": "https://iett.istanbul/StationDetail?dkod=900081"
+    }
+  },
+  {
+    "name": "Altunizade",
+    "lat": 41.0220861,
+    "lon": 29.0481789,
+    "tags": {
+      "bus": "yes",
+      "name": "Altunizade",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900051",
+      "website": "https://iett.istanbul/StationDetail?dkod=900051",
+      "wheelchair": "no",
+      "wikidata": "Q48802746",
+      "wikimedia_commons": "Category:Altunizade Metrobus Station",
+      "wikipedia": "tr:Altunizade Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Altunizade",
+    "lat": 41.0212803,
+    "lon": 29.0489017,
+    "tags": {
+      "bus": "yes",
+      "name": "Altunizade",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900052",
+      "website": "https://iett.istanbul/StationDetail?dkod=900052",
+      "wheelchair": "no",
+      "wikidata": "Q48802746",
+      "wikimedia_commons": "Category:Altunizade Metrobus Station",
+      "wikipedia": "tr:Altunizade Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Burhaniye",
+    "lat": 41.0321349,
+    "lon": 29.0470357,
+    "tags": {
+      "bus": "yes",
+      "highway": "bus_stop",
+      "name": "Burhaniye",
+      "network": "Metrobus",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "platform",
+      "ref": "900061;900062",
+      "website": "https://iett.istanbul/StationDetail?dkod=900061;https://iett.istanbul/StationDetail?dkod=900062",
+      "wheelchair": "no",
+      "wikidata": "Q60753015",
+      "wikimedia_commons": "Category:Burhaniye Metrobus Station",
+      "wikipedia": "tr:Burhaniye Metrobüs İstasyonu"
+    }
+  },
+  {
+    "name": "Burhaniye",
+    "lat": 41.032303,
+    "lon": 29.0470902,
+    "tags": {
+      "bus": "yes",
+      "name": "Burhaniye",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900061",
+      "website": "https://iett.istanbul/StationDetail?dkod=900061",
+      "wheelchair": "no"
+    }
+  },
+  {
+    "name": "Burhaniye",
+    "lat": 41.03199,
+    "lon": 29.0469814,
+    "tags": {
+      "bus": "yes",
+      "name": "Burhaniye",
+      "network": "Metrobus (Istanbul)",
+      "network:wikidata": "Q603319",
+      "not:network:wikidata": "Q343136",
+      "operator": "İETT",
+      "operator:wikidata": "Q343136",
+      "public_transport": "stop_position",
+      "ref": "900062",
+      "website": "https://iett.istanbul/StationDetail?dkod=900062",
+      "wheelchair": "no"
+    }
+  }
+]

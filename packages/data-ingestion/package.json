@@ -1,0 +1,27 @@
+{
+    "name": "@metrobus/data-ingestion",
+    "version": "1.0.0",
+    "description": "Veri toplama servisi — GPS, İETT API, trafik verisi",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx watch src/index.ts",
+        "start": "node dist/index.js",
+        "clean": "rimraf dist",
+        "test": "echo \"No tests yet\"",
+        "lint": "eslint src/"
+    },
+    "dependencies": {
+        "@metrobus/shared": "1.0.0",
+        "kafkajs": "^2.2.4",
+        "axios": "^1.6.5",
+        "dotenv": "^16.3.1",
+        "winston": "^3.11.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.3.3",
+        "tsx": "^4.7.0",
+        "rimraf": "^5.0.5",
+        "@types/node": "^20.10.0"
+    }
+}
