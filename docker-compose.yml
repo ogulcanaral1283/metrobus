@@ -2,7 +2,20 @@ version: '3.8'
 
 services:
   # ========================
-  # Altyapı Servisleri
+  # Dashboard (Frontend)
+  # ========================
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: metrobus-dashboard
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
+  # ========================
+  # Infrastructure Services
   # ========================
 
   timescaledb:
@@ -18,7 +31,7 @@ services:
       - timescaledb_data:/var/lib/postgresql/data
       - ./infrastructure/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U metrobus_user -d metrobus"]
+      test: [ "CMD-SHELL", "pg_isready -U metrobus_user -d metrobus" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,7 +44,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,7 +70,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      test: [ "CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092" ]
       interval: 15s
       timeout: 10s
       retries: 10
