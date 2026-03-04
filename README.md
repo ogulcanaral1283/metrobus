@@ -1,110 +1,154 @@
-# 🚍 İstanbul Metrobüs Akıllı Trafik Yönetim Sistemi
+# 🚍 Istanbul Metrobus Smart Traffic Management System
 
-Metrobüs hattındaki araçların konumlarını, araç arası mesafeleri ve durak yoğunluklarını gerçek zamanlı izleyerek şoförlere yönlendirme komutları veren akıllı trafik yönetim sistemi.
+A real-time intelligent traffic management system for Istanbul's Metrobus rapid transit line. The system monitors vehicle positions, headway distances, and station congestion levels, providing live driver guidance commands to optimize fleet performance and reduce bus bunching.
 
 ## 🎯 Problem
 
-İstanbul metrobüs hattında araçların birbirine yığılması (bus bunching) veya aralarında aşırı boşluk oluşması, yolcu deneyimini ciddi şekilde olumsuz etkiler. Bu sistem, şoförlere araç içi ekranlar aracılığıyla gerçek zamanlı yönlendirme sağlayarak bu sorunu çözer.
+Bus bunching — where vehicles cluster together leaving large gaps in service — is a chronic issue on Istanbul's 52 km Metrobus corridor serving 800,000+ daily passengers. This system provides real-time driver instructions via in-vehicle HUD displays to maintain optimal headway spacing.
 
-## 🏗️ Mimari
+## 🏗️ Architecture
 
 ```
-Veri Kaynakları → Veri Toplama → Gerçek Zamanlı İşlem → Karar Motoru → Şoför HUD
-     GPS              Kafka          Headway Hesabı       Kural Motoru     WebSocket
-     İETT API                        Bunching Tespiti     ML Tahmini       React
-     Trafik API                      Yoğunluk Analizi     Komut Üretimi
+Data Sources → Ingestion Layer → Real-Time Engine → Decision Engine → Driver HUD
+    GPS           Kafka           Headway Calc        Rule Engine      WebSocket
+    IETT API                      Bunching Detection   ML Prediction    React UI
+    Traffic API                   Congestion Analysis  Command Gen
 ```
 
-## 📦 Paketler
+## 📦 Packages
 
-| Paket | Açıklama |
-|-------|----------|
-| `shared` | Ortak tipler, sabitler ve yardımcı fonksiyonlar |
-| `data-ingestion` | GPS, İETT API, trafik verisi toplama |
-| `realtime-engine` | Araç takibi, headway hesabı, yoğunluk analizi |
-| `decision-engine` | Kural tabanlı karar motoru |
-| `ml-service` | Makine öğrenmesi tahmin servisi (Python) |
-| `api-gateway` | REST API + WebSocket sunucusu |
-| `driver-hud` | Şoför araç içi ekran arayüzü |
-| `dashboard` | Yönetim ve izleme paneli |
+| Package | Description |
+|---------|-------------|
+| `shared` | Common types, constants, utilities, station & route data |
+| `data-ingestion` | GPS, IETT API, and traffic data collectors |
+| `realtime-engine` | Vehicle tracking, headway calculation, congestion analysis |
+| `decision-engine` | Rule-based decision engine with approach optimization |
+| `ml-service` | Machine learning prediction service (Python) |
+| `api-gateway` | REST API + WebSocket server |
+| `driver-hud` | In-vehicle driver heads-up display |
+| `dashboard` | Management & monitoring dashboard with live map |
 
-## ⚡ Hızlı Başlangıç
+## 🗺️ Route Data
 
-### Gereksinimler
+The route geometry and station positions are sourced directly from **OpenStreetMap** via the Overpass API:
+
+- **45 stations** from Beylikdüzü (TÜYAP) to Söğütlüçeşme
+- **Eastbound route** (34G Beylikdüzü → Söğütlüçeşme): 1,065 coordinate points
+- **Westbound route** (34G Söğütlüçeşme → Beylikdüzü): 1,047 coordinate points
+- **99 verified stop positions** from OSM bus stop nodes
+
+## ⚡ Quick Start
+
+### Prerequisites
 
 - Node.js >= 20.0.0
-- Docker & Docker Compose
-- Python >= 3.10 (ML servisi için)
+- Docker & Docker Compose (for full stack)
+- Python >= 3.10 (for ML service)
 
-### Kurulum
+### Installation
 
 ```bash
-# Repo'yu klonla
-git clone <repo-url>
+# Clone the repo
+git clone https://github.com/ogulcanaral1283/metrobus.git
 cd metrobus
 
-# Bağımlılıkları kur
+# Install dependencies
 npm install
 
-# Ortam değişkenlerini ayarla
+# Set up environment
 cp .env.example .env
-# .env dosyasını düzenle
+# Edit .env with your configuration
 
-# Altyapı servislerini başlat
+# Start infrastructure services
 docker-compose up -d
 
-# Geliştirme sunucularını başlat
+# Start all dev servers
 npm run dev
 ```
 
-### Simülasyon
+### Dashboard Only
 
 ```bash
-# Araç simülasyonu ile test
+# Run just the dashboard with live map
+npm run dev:dashboard
+```
+
+### Vehicle Simulation
+
+```bash
+# Simulate vehicles on the route
 npm run dev:simulate
 ```
 
-## 📊 Karar Motoru Komutları
+### Refresh Route Data from OSM
 
-| Komut | Tetikleyici | Aksiyon |
-|-------|-------------|---------|
-| 🐢 YAVAŞLA | Öndeki araçla mesafe < 200m | Hızı %30 düşür |
-| 🚀 DURMA | Arkadaki araç > 3dk geride | Durakta durmadan devam |
-| ⚠️ DİKKAT | Durak yoğunluk skoru > 80 | Durakta dikkatli ol |
-| ⏩ HIZLAN | Sefer planından > 5dk gecikme | Hızlanarak plana uy |
-| ✅ NORMAL | Tüm metrikler normal | Standart seyir |
+```bash
+# Fetch latest route geometry from OpenStreetMap
+npx tsx scripts/fetch-route-osrm.ts
+```
 
-## 🛠️ Teknoloji Yığını
+## 📊 Decision Engine Commands
 
-- **Backend:** Node.js + TypeScript
-- **Mesajlaşma:** Apache Kafka
-- **Veritabanı:** TimescaleDB (PostgreSQL)
+| Command | Trigger | Action |
+|---------|---------|--------|
+| 🐢 SLOW DOWN | Leading vehicle < 200m ahead | Reduce speed by 30% |
+| 🚀 EXPRESS | Following vehicle > 3min behind | Skip station stop |
+| ⚠️ CAUTION | Station congestion score > 80 | Approach with caution |
+| ⏩ SPEED UP | > 5min behind schedule | Increase speed to catch up |
+| ✅ NORMAL | All metrics within range | Standard operation |
+
+## 🛠️ Tech Stack
+
+- **Backend:** Node.js + TypeScript (monorepo with npm workspaces)
+- **Messaging:** Apache Kafka
+- **Database:** TimescaleDB (PostgreSQL)
 - **Cache:** Redis
 - **ML:** Python + scikit-learn
-- **Frontend:** React + Vite
-- **Harita:** OpenStreetMap + Leaflet
-- **WebSocket:** Socket.IO
-- **Container:** Docker + Docker Compose
+- **Frontend:** React 18 + Vite
+- **Maps:** OpenStreetMap + Leaflet + react-leaflet
+- **Real-time:** Socket.IO (WebSocket)
+- **Infrastructure:** Docker + Docker Compose
 
-## 📁 Proje Yapısı
+## 📁 Project Structure
 
 ```
 metrobus/
 ├── packages/
-│   ├── shared/           # Ortak tipler ve yardımcılar
-│   ├── data-ingestion/   # Veri toplama servisi
-│   ├── realtime-engine/  # Gerçek zamanlı işlem motoru
-│   ├── decision-engine/  # Karar motoru
-│   ├── ml-service/       # ML tahmin servisi
-│   ├── api-gateway/      # API sunucusu
-│   ├── driver-hud/       # Şoför HUD arayüzü
-│   └── dashboard/        # Yönetim paneli
-├── infrastructure/       # Docker ve DB konfigürasyonları
-├── scripts/              # Yardımcı scriptler
-├── docs/                 # Dökümanlar
-└── tests/                # Entegrasyon testleri
+│   ├── shared/             # Common types, station data, route geometry
+│   ├── data-ingestion/     # Data collection service
+│   ├── realtime-engine/    # Real-time processing engine
+│   ├── decision-engine/    # Rule-based decision engine
+│   ├── ml-service/         # ML prediction service (Python)
+│   ├── api-gateway/        # API server
+│   ├── driver-hud/         # Driver HUD interface
+│   └── dashboard/          # Management & monitoring dashboard
+├── infrastructure/         # Docker & database configs
+├── scripts/                # Route data fetch & vehicle simulation
+├── docs/                   # Architecture & decision rule docs
+└── tsconfig.json           # Root TypeScript config
 ```
 
-## 📄 Lisans
+## 🚀 Deployment
+
+### Production Build
+
+```bash
+npm -w packages/dashboard run build
+```
+
+### Serve with Nginx
+
+```bash
+sudo cp -r packages/dashboard/dist/* /var/www/html/
+sudo systemctl restart nginx
+```
+
+### Serve with Vite Preview
+
+```bash
+npm -w packages/dashboard run preview -- --host 0.0.0.0
+```
+
+## 📄 License
 
 MIT
