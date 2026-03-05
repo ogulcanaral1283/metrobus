@@ -21,6 +21,9 @@ export { ROUTE_NETWORK } from './constants/route-network-data';
 export { GIDIS_LANE, DONUS_LANE, LANE_BOUNDARIES } from './constants/lane-boundaries';
 export { PLATFORM_GEOMETRIES } from './constants/platform-geometries';
 export type { PlatformGeometry } from './constants/platform-geometries';
+export { GIDIS_SYNTHETIC_LANES, DONUS_SYNTHETIC_LANES } from './constants/synthetic-lanes';
+export type { SyntheticLane } from './constants/synthetic-lanes';
+export { SHARED_WAY_IDS } from './constants/shared-way-ids';
 export {
     HEADWAY_CONFIG,
     CONGESTION_CONFIG,
@@ -52,3 +55,11 @@ export {
     formatTimestamp,
     ISTANBUL_TIMEZONE,
 } from './utils/time';
+
+// Simulation
+export { SimEngine, DEFAULT_SIM_CONFIG, linearizeRoute, meterToPosition } from './simulation';
+export type { SimVehicle, VehiclePhase, SimConfig, SimState, TrafficZone, LinearStop, LinearRoute } from './simulation';
+
+// Station Slots
+export { STATION_SLOTS } from './constants/station-slots';
+export type { StationSlotInfo, StopPosition } from './constants/station-slots';

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { STATIONS_EAST, ROUTE_NETWORK, GIDIS_LANE, DONUS_LANE, PLATFORM_GEOMETRIES, haversineDistance, calculateBearing, moveAlongBearing, isRushHour, formatDuration } from '@metrobus/shared';
+import { STATIONS_EAST, ROUTE_NETWORK, GIDIS_LANE, DONUS_LANE, PLATFORM_GEOMETRIES, GIDIS_SYNTHETIC_LANES, DONUS_SYNTHETIC_LANES, SHARED_WAY_IDS, haversineDistance, calculateBearing, moveAlongBearing, isRushHour, formatDuration, SimEngine } from '@metrobus/shared';
+import type { SimVehicle, SimState } from '@metrobus/shared';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -60,106 +61,27 @@ const MAP_TILES = {
 
 type MapTileMode = keyof typeof MAP_TILES;
 
+const SIM_TICK_MS = 50; // 20 FPS
 const NUM_VEHICLES = 10;
-const UPDATE_INTERVAL = 2000;
 
-interface SimVehicle {
-    id: number;
-    code: string;
-    stationIndex: number;
-    progress: number;
-    speed: number;
-    lat: number;
-    lng: number;
-    status: 'normal' | 'approaching' | 'at_station' | 'slow' | 'fast';
-    nextStation: string;
-    slotWait: boolean;
-}
-
-function initVehicles(): SimVehicle[] {
-    const vehicles: SimVehicle[] = [];
-    for (let i = 0; i < NUM_VEHICLES; i++) {
-        const idx = Math.floor((i / NUM_VEHICLES) * STATION_LIST.length);
-        const s = STATION_LIST[idx];
-        vehicles.push({
-            id: i + 1,
-            code: `MB${String(i + 1).padStart(3, '0')}`,
-            stationIndex: idx,
-            progress: 0,
-            speed: 30 + Math.random() * 20,
-            lat: s.latitude + (Math.random() - 0.5) * 0.001,
-            lng: s.longitude + (Math.random() - 0.5) * 0.001,
-            status: 'normal',
-            nextStation: STATION_LIST[Math.min(idx + 1, STATION_LIST.length - 1)].name,
-            slotWait: false,
-        });
-    }
-    return vehicles;
-}
-
-function updateVehicle(v: SimVehicle): SimVehicle {
-    const cur = STATION_LIST[v.stationIndex];
-    let nextIdx = v.stationIndex + 1;
-    if (nextIdx >= STATION_LIST.length) nextIdx = 0;
-    const next = STATION_LIST[nextIdx];
-    const dist = haversineDistance(cur.latitude, cur.longitude, next.latitude, next.longitude);
-    const rushFactor = isRushHour() ? 0.6 : 1.0;
-    const newSpeed = (30 + Math.random() * 25) * rushFactor;
-    const metersPerTick = (newSpeed * 1000 / 3600) * (UPDATE_INTERVAL / 1000);
-    const newProgress = v.progress + metersPerTick / dist;
-
-    if (newProgress >= 1) {
-        // Durağa ulaştı, kısa bekleme sonra ilerle
-        const distToNext = haversineDistance(next.latitude, next.longitude,
-            STATION_LIST[Math.min(nextIdx + 1, STATION_LIST.length - 1)].latitude,
-            STATION_LIST[Math.min(nextIdx + 1, STATION_LIST.length - 1)].longitude);
-        return {
-            ...v,
-            stationIndex: nextIdx,
-            progress: 0,
-            speed: newSpeed,
-            lat: next.latitude,
-            lng: next.longitude,
-            status: 'at_station',
-            nextStation: STATION_LIST[Math.min(nextIdx + 1, STATION_LIST.length - 1)].name,
-            slotWait: Math.random() > 0.6,
-        };
-    }
-
-    const bearing = calculateBearing(cur.latitude, cur.longitude, next.latitude, next.longitude);
-    const pos = moveAlongBearing(cur.latitude, cur.longitude, bearing, dist * newProgress);
-    const distToStation = dist * (1 - newProgress);
-
-    let status: SimVehicle['status'] = 'normal';
-    if (distToStation < 500) status = 'approaching';
-    if (newSpeed < 25) status = 'slow';
-    if (newSpeed > 50) status = 'fast';
-
-    return {
-        ...v,
-        progress: newProgress,
-        speed: newSpeed,
-        lat: pos.latitude,
-        lng: pos.longitude,
-        status,
-        nextStation: next.name,
-        slotWait: false,
-    };
+/** Araç fazına göre ikon rengi */
+function phaseColor(vehicle: SimVehicle): string {
+    const speedKmh = vehicle.speed * 3.6;
+    if (vehicle.phase === 'stopped') return '#2196F3';      // Mavi — durakta
+    if (vehicle.phase === 'approaching') return '#FF9800';   // Turuncu — yaklaşım
+    if (vehicle.phase === 'departing') return '#8BC34A';     // Açık yeşil — kalkış
+    if (speedKmh < 15) return '#F44336';                     // Kırmızı — yavaş/trafik
+    if (speedKmh > 60) return '#9C27B0';                     // Mor — hızlı
+    return '#4CAF50';                                        // Yeşil — normal
 }
 
 // ==========================================
 // Harita içi araç ikonları
 // ==========================================
 
-function vehicleIcon(status: string) {
-    const colors: Record<string, string> = {
-        normal: '#4CAF50',
-        approaching: '#FF9800',
-        at_station: '#2196F3',
-        slow: '#F44336',
-        fast: '#9C27B0',
-    };
-    const c = colors[status] || '#4CAF50';
+function vehicleIcon(vehicle: SimVehicle) {
+    const c = phaseColor(vehicle);
+    const speedKmh = Math.round(vehicle.speed * 3.6);
     return L.divIcon({
         className: '',
         html: `<div style="
@@ -207,42 +129,74 @@ function stationIcon(name: string, seq: number, isHighlight: boolean = false) {
 // ==========================================
 
 const App: React.FC = () => {
-    const [vehicles, setVehicles] = useState<SimVehicle[]>(initVehicles);
+    const gidisRef = useRef<SimEngine | null>(null);
+    const donusRef = useRef<SimEngine | null>(null);
+    const [simState, setSimState] = useState<{ gidis: SimState | null; donus: SimState | null }>({ gidis: null, donus: null });
     const [selectedVehicle, setSelectedVehicle] = useState<SimVehicle | null>(null);
     const [tick, setTick] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
-    const [stats, setStats] = useState({ totalSaved: 0, optimizations: 0 });
+    const [timeScale, setTimeScale] = useState(5);
     const [mapTile, setMapTile] = useState<MapTileMode>('dark');
 
-    // Araçları güncelle
+    // Çift yönlü engine init
     useEffect(() => {
-        if (isPaused) return;
-        const timer = setInterval(() => {
-            setVehicles(prev => {
-                const updated = prev.map(updateVehicle);
-                // Çift durma tasarrufu simülasyonu
-                const atStation = updated.filter(v => v.status === 'at_station' && v.slotWait);
-                if (atStation.length > 0) {
-                    setStats(s => ({
-                        totalSaved: s.totalSaved + atStation.length * 18,
-                        optimizations: s.optimizations + atStation.length,
-                    }));
-                }
-                return updated;
-            });
+        const g = new SimEngine(ROUTE_NETWORK.edges.gidis, ROUTE_NETWORK.stops.gidis, 'gidis', { timeScale });
+        g.init(8);
+        gidisRef.current = g;
+
+        const d = new SimEngine(ROUTE_NETWORK.edges.donus, ROUTE_NETWORK.stops.donus, 'donus', { timeScale });
+        d.init(8);
+        donusRef.current = d;
+
+        setSimState({ gidis: g.getState(), donus: d.getState() });
+    }, []);
+
+    // Simülasyon döngüsü
+    useEffect(() => {
+        if (isPaused || !gidisRef.current || !donusRef.current) return;
+        let lastTime = performance.now();
+        let frameId: number;
+
+        const loop = (now: number) => {
+            const dt = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+            const gs = gidisRef.current!.tick(dt);
+            const ds = donusRef.current!.tick(dt);
+            setSimState({ gidis: gs, donus: ds });
             setTick(t => t + 1);
-        }, UPDATE_INTERVAL);
-        return () => clearInterval(timer);
-    }, [isPaused]);
+            frameId = requestAnimationFrame(loop);
+        };
+        frameId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(frameId);
+    }, [isPaused, timeScale]);
 
-    // Güzergah — artık edge-based offset rendering kullanılıyor (aşağıda)
+    useEffect(() => {
+        gidisRef.current?.setTimeScale(timeScale);
+        donusRef.current?.setTimeScale(timeScale);
+    }, [timeScale]);
 
-    const statusLabel: Record<string, string> = {
-        normal: '🟢 Normal',
-        approaching: '🟡 Durağa yaklaşıyor',
-        at_station: '🔵 Durakta',
-        slow: '🔴 Yavaş',
-        fast: '🟣 Hızlı',
+    const vehicles = [
+        ...(simState.gidis?.vehicles ?? []),
+        ...(simState.donus?.vehicles ?? []),
+    ];
+
+    const getEngine = (dir: 'gidis' | 'donus') => dir === 'gidis' ? gidisRef.current : donusRef.current;
+
+    // Per-vehicle komutlar
+    const cmdStop = (v: SimVehicle) => getEngine(v.direction)?.stopVehicle(v.id);
+    const cmdSlow = (v: SimVehicle) => getEngine(v.direction)?.slowVehicle(v.id);
+    const cmdRelease = (v: SimVehicle) => getEngine(v.direction)?.releaseVehicle(v.id);
+    const cmdAddVehicle = (dir: 'gidis' | 'donus') => getEngine(dir)?.spawnVehicle();
+    const cmdRemoveVehicle = (v: SimVehicle) => {
+        getEngine(v.direction)?.removeVehicle(v.id);
+        if (selectedVehicle?.id === v.id) setSelectedVehicle(null);
+    };
+
+    const phaseLabel: Record<string, string> = {
+        cruising: '🟢 Seyir',
+        approaching: '🟡 Yaklaşıyor',
+        stopped: '🔵 Durakta',
+        departing: '🟢 Kalkış',
     };
 
     return (
@@ -265,18 +219,18 @@ const App: React.FC = () => {
                         <div className="stat-label">Durak</div>
                     </div>
                     <div className="stat-card accent">
-                        <div className="stat-value">{Math.round(stats.totalSaved / 60)}dk</div>
-                        <div className="stat-label">Tasarruf</div>
+                        <div className="stat-value">{vehicles.filter(v => v.direction === 'gidis').length}</div>
+                        <div className="stat-label">🔵 Gidiş</div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-value">{stats.optimizations}</div>
-                        <div className="stat-label">Optimizasyon</div>
+                        <div className="stat-value">{vehicles.filter(v => v.direction === 'donus').length}</div>
+                        <div className="stat-label">🟠 Dönüş</div>
                     </div>
                 </div>
 
                 {/* Rush Hour durumu */}
-                <div className={`rush-indicator ${isRushHour() ? 'active' : ''}`}>
-                    {isRushHour() ? '🔴 PİK SAAT — Yoğun trafik' : '🟢 Normal trafik akışı'}
+                <div className={`rush-indicator ${simState.gidis?.isRushHour ? 'active' : ''}`}>
+                    {simState.gidis?.isRushHour ? '🔴 PİK SAAT — Yoğun trafik' : '🟢 Normal trafik akışı'}
                 </div>
 
                 {/* Kontroller */}
@@ -286,30 +240,48 @@ const App: React.FC = () => {
                     </button>
                 </div>
 
+                {/* Hız çarpanı */}
+                <div style={{ padding: '8px 16px' }}>
+                    <label style={{ color: '#aaa', fontSize: '11px' }}>Sim Hızı: {timeScale}x</label>
+                    <input type="range" min={1} max={20} step={1} value={timeScale}
+                        onChange={e => setTimeScale(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: '#FF9800' }} />
+                </div>
+
+                {/* Araç ekle */}
+                <div style={{ display: 'flex', gap: '6px', padding: '0 16px 8px' }}>
+                    <button className="btn" style={{ flex: 1, fontSize: '11px', padding: '6px' }}
+                        onClick={() => cmdAddVehicle('gidis')}>✚ Gidiş Araç</button>
+                    <button className="btn" style={{ flex: 1, fontSize: '11px', padding: '6px' }}
+                        onClick={() => cmdAddVehicle('donus')}>✚ Dönüş Araç</button>
+                </div>
+
                 {/* Araç listesi */}
                 <div className="vehicle-list-header">
-                    <h2>Araçlar</h2>
+                    <h2>Araçlar ({vehicles.length})</h2>
                 </div>
                 <div className="vehicle-list">
                     {vehicles.map(v => (
                         <div
-                            key={v.id}
-                            className={`vehicle-card ${selectedVehicle?.id === v.id ? 'selected' : ''}`}
+                            key={`${v.direction}-${v.id}`}
+                            className={`vehicle-card ${selectedVehicle?.id === v.id && selectedVehicle?.direction === v.direction ? 'selected' : ''}`}
                             onClick={() => setSelectedVehicle(v)}
                         >
                             <div className="vehicle-card-header">
-                                <span className="vehicle-code">{v.code}</span>
-                                <span className={`vehicle-status status-${v.status}`}>
-                                    {statusLabel[v.status]}
+                                <span className="vehicle-code">
+                                    <span style={{ color: v.direction === 'gidis' ? '#42A5F5' : '#FFA726', marginRight: '4px' }}>
+                                        {v.direction === 'gidis' ? '→' : '←'}
+                                    </span>
+                                    {v.code}
+                                </span>
+                                <span className={`vehicle-status status-${v.phase}`}>
+                                    {phaseLabel[v.phase]}
                                 </span>
                             </div>
                             <div className="vehicle-card-body">
                                 <div className="vehicle-info">
-                                    <span>📍 {v.nextStation}</span>
-                                </div>
-                                <div className="vehicle-info">
-                                    <span>🏎️ {v.speed.toFixed(0)} km/s</span>
-                                    {v.slotWait && <span className="slot-badge">🎯 Optimized</span>}
+                                    <span>🏎️ {(v.speed * 3.6).toFixed(0)} km/h</span>
+                                    {v.manualOverride !== null && <span style={{ color: '#F44336', fontSize: '10px', marginLeft: '4px' }}>⬤ MANUEL</span>}
                                 </div>
                             </div>
                         </div>
@@ -354,27 +326,46 @@ const App: React.FC = () => {
                         ))}
                     </div>
 
-                    {/* Gidiş — shared segmentlerde mikro-offset (+1.5m) */}
-                    {ROUTE_NETWORK.edges.gidis.map((edge) => (
+                    {/* Katman 1: Non-shared gidiş edge'leri (gerçek OSM pozisyonu) */}
+                    {ROUTE_NETWORK.edges.gidis
+                        .filter((edge) => !SHARED_WAY_IDS.has(edge.osmWayId))
+                        .map((edge) => (
+                            <Polyline
+                                key={edge.id}
+                                positions={edge.geometry}
+                                pathOptions={{ color: '#4FC3F7', weight: 3, opacity: 0.85 }}
+                            />
+                        ))}
+
+                    {/* Katman 1: Non-shared dönüş edge'leri (gerçek OSM pozisyonu) */}
+                    {ROUTE_NETWORK.edges.donus
+                        .filter((edge) => !SHARED_WAY_IDS.has(edge.osmWayId))
+                        .map((edge) => (
+                            <Polyline
+                                key={edge.id}
+                                positions={edge.geometry}
+                                pathOptions={{ color: '#FF9800', weight: 3, opacity: 0.85 }}
+                            />
+                        ))}
+
+                    {/* Sentetik gidiş — shared koridorlar +5m sağa */}
+                    {GIDIS_SYNTHETIC_LANES.map((lane) => (
                         <Polyline
-                            key={edge.id}
-                            positions={edge.isSharedGeometry
-                                ? offsetPolyline(edge.geometry, 0.000015)
-                                : edge.geometry}
-                            pathOptions={{ color: '#4FC3F7', weight: 4, opacity: 0.85 }}
+                            key={`sg-${lane.corridorIndex}`}
+                            positions={lane.geometry}
+                            pathOptions={{ color: '#4FC3F7', weight: 3, opacity: 0.85 }}
                         />
                     ))}
 
-                    {/* Dönüş — shared segmentlerde mikro-offset (-1.5m) */}
-                    {ROUTE_NETWORK.edges.donus.map((edge) => (
+                    {/* Sentetik dönüş — shared koridorlar -5m sola */}
+                    {DONUS_SYNTHETIC_LANES.map((lane) => (
                         <Polyline
-                            key={edge.id}
-                            positions={edge.isSharedGeometry
-                                ? offsetPolyline(edge.geometry, -0.000015)
-                                : edge.geometry}
-                            pathOptions={{ color: '#FF9800', weight: 4, opacity: 0.85 }}
+                            key={`sd-${lane.corridorIndex}`}
+                            positions={lane.geometry}
+                            pathOptions={{ color: '#FF9800', weight: 3, opacity: 0.85 }}
                         />
                     ))}
+
                     {/* Durak platform şeritleri — OSM platform way geometrileri */}
                     {PLATFORM_GEOMETRIES.map((p) => (
                         <Polyline
@@ -416,18 +407,18 @@ const App: React.FC = () => {
                     {vehicles.map(v => (
                         <Marker
                             key={v.id}
-                            position={[v.lat, v.lng]}
-                            icon={vehicleIcon(v.status)}
+                            position={[v.latitude, v.longitude]}
+                            icon={vehicleIcon(v)}
                             eventHandlers={{ click: () => setSelectedVehicle(v) }}
                         >
                             <Popup>
                                 <div style={{ fontFamily: 'Inter,sans-serif', minWidth: '180px' }}>
                                     <strong style={{ fontSize: '15px' }}>🚍 {v.code}</strong>
                                     <div style={{ marginTop: '6px', fontSize: '12px' }}>
-                                        <div>Hız: <b>{v.speed.toFixed(0)} km/s</b></div>
-                                        <div>Sonraki: <b>{v.nextStation}</b></div>
-                                        <div>Durum: {statusLabel[v.status]}</div>
-                                        {v.slotWait && <div style={{ color: '#FF9800', marginTop: '4px' }}>🎯 Çift durma optimize edildi</div>}
+                                        <div>Hız: <b>{(v.speed * 3.6).toFixed(0)} km/h</b></div>
+                                        <div>Faz: {phaseLabel[v.phase]}</div>
+                                        <div>Pozisyon: <b>{v.positionMeters.toFixed(0)}m</b></div>
+                                        <div>İvme: <b>{v.acceleration.toFixed(2)} m/s²</b></div>
                                     </div>
                                 </div>
                             </Popup>
@@ -439,35 +430,60 @@ const App: React.FC = () => {
                 {selectedVehicle && (
                     <div className="detail-panel">
                         <div className="detail-header">
-                            <h3>🚍 {selectedVehicle.code}</h3>
+                            <h3>🚍 {selectedVehicle.code}
+                                <span style={{ fontSize: '11px', color: selectedVehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726', marginLeft: '8px' }}>
+                                    {selectedVehicle.direction === 'gidis' ? '→ Gidiş' : '← Dönüş'}
+                                </span>
+                            </h3>
                             <button className="close-btn" onClick={() => setSelectedVehicle(null)}>✕</button>
                         </div>
                         <div className="detail-body">
                             <div className="detail-row">
                                 <span className="detail-label">Durum</span>
-                                <span className={`vehicle-status status-${selectedVehicle.status}`}>
-                                    {statusLabel[selectedVehicle.status]}
+                                <span className={`vehicle-status status-${selectedVehicle.phase}`}>
+                                    {phaseLabel[selectedVehicle.phase]}
                                 </span>
                             </div>
                             <div className="detail-row">
                                 <span className="detail-label">Hız</span>
-                                <span className="detail-value">{selectedVehicle.speed.toFixed(0)} km/s</span>
+                                <span className="detail-value">{(selectedVehicle.speed * 3.6).toFixed(1)} km/h</span>
                             </div>
                             <div className="detail-row">
-                                <span className="detail-label">Sonraki Durak</span>
-                                <span className="detail-value">{selectedVehicle.nextStation}</span>
+                                <span className="detail-label">İvme</span>
+                                <span className="detail-value">{selectedVehicle.acceleration.toFixed(2)} m/s²</span>
                             </div>
                             <div className="detail-row">
-                                <span className="detail-label">Konum</span>
-                                <span className="detail-value" style={{ fontSize: '11px' }}>
-                                    {selectedVehicle.lat.toFixed(4)}, {selectedVehicle.lng.toFixed(4)}
-                                </span>
+                                <span className="detail-label">Pozisyon</span>
+                                <span className="detail-value">{selectedVehicle.positionMeters.toFixed(0)} m</span>
                             </div>
-                            {selectedVehicle.slotWait && (
-                                <div className="detail-alert">
-                                    🎯 Çift durma önleme aktif — slot boşalması bekleniyor
+                            <div className="detail-row">
+                                <span className="detail-label">Durak</span>
+                                <span className="detail-value">{selectedVehicle.totalStops} kez</span>
+                            </div>
+                            {selectedVehicle.manualOverride !== null && (
+                                <div style={{ background: 'rgba(244,67,54,0.15)', padding: '6px 10px', borderRadius: '6px', color: '#F44336', fontSize: '12px', marginTop: '4px' }}>
+                                    ⚠️ Manuel kontrol aktif — hedef hız: {selectedVehicle.manualOverride === 0 ? 'DURDURULDU' : `${(selectedVehicle.manualOverride * 3.6).toFixed(0)} km/h`}
                                 </div>
                             )}
+                        </div>
+                        {/* Araç kontrol butonları */}
+                        <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                            <button onClick={() => cmdStop(selectedVehicle)}
+                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#F44336', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
+                                ⏹ Durdur
+                            </button>
+                            <button onClick={() => cmdSlow(selectedVehicle)}
+                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#FF9800', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
+                                🐌 Yavaşlat
+                            </button>
+                            <button onClick={() => cmdRelease(selectedVehicle)}
+                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#4CAF50', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
+                                ▶️ Serbest
+                            </button>
+                            <button onClick={() => cmdRemoveVehicle(selectedVehicle)}
+                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#616161', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
+                                🗑️ Kaldır
+                            </button>
                         </div>
                     </div>
                 )}
