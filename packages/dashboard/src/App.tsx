@@ -1,9 +1,35 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { STATIONS_EAST, METROBUS_ROUTE_EAST, METROBUS_ROUTE_WEST, METROBUS_ROUTE_GEOMETRY, haversineDistance, calculateBearing, moveAlongBearing, isRushHour, formatDuration } from '@metrobus/shared';
+import { STATIONS_EAST, ROUTE_NETWORK, GIDIS_LANE, DONUS_LANE, PLATFORM_GEOMETRIES, haversineDistance, calculateBearing, moveAlongBearing, isRushHour, formatDuration } from '@metrobus/shared';
 
 import 'leaflet/dist/leaflet.css';
+
+// Offset polyline — shared geometry segmentlerde gidiş/dönüşü ayırmak için
+function offsetPolyline(coords: [number, number][], offset: number): [number, number][] {
+    if (coords.length < 2) return coords;
+    const result: [number, number][] = [];
+    for (let i = 0; i < coords.length; i++) {
+        let dx: number, dy: number;
+        if (i === 0) {
+            dy = coords[1][0] - coords[0][0];
+            dx = coords[1][1] - coords[0][1];
+        } else if (i === coords.length - 1) {
+            dy = coords[i][0] - coords[i - 1][0];
+            dx = coords[i][1] - coords[i - 1][1];
+        } else {
+            dy = coords[i + 1][0] - coords[i - 1][0];
+            dx = coords[i + 1][1] - coords[i - 1][1];
+        }
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len === 0) { result.push(coords[i]); continue; }
+        // Perpendicular: rotate 90° → (-dy, dx)
+        const nx = -dy / len;
+        const ny = dx / len;
+        result.push([coords[i][0] + nx * offset, coords[i][1] + ny * offset]);
+    }
+    return result;
+}
 
 // ==========================================
 // VERİ — Duraklar ve simüle araçlar
@@ -12,6 +38,27 @@ import 'leaflet/dist/leaflet.css';
 const STATION_LIST = STATIONS_EAST;
 const ISTANBUL_CENTER: [number, number] = [41.0270, 28.8850];
 const DEFAULT_ZOOM = 11;
+
+// Harita modları
+const MAP_TILES = {
+    dark: {
+        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> | &copy; <a href="https://carto.com/">CARTO</a>',
+        label: '🌙 Dark',
+    },
+    satellite: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attribution: '&copy; <a href="https://www.esri.com/">Esri</a> | Maxar, Earthstar Geographics',
+        label: '🛰️ Uydu',
+    },
+    street: {
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        label: '🗺️ Sokak',
+    },
+} as const;
+
+type MapTileMode = keyof typeof MAP_TILES;
 
 const NUM_VEHICLES = 10;
 const UPDATE_INTERVAL = 2000;
@@ -165,6 +212,7 @@ const App: React.FC = () => {
     const [tick, setTick] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
     const [stats, setStats] = useState({ totalSaved: 0, optimizations: 0 });
+    const [mapTile, setMapTile] = useState<MapTileMode>('dark');
 
     // Araçları güncelle
     useEffect(() => {
@@ -187,8 +235,7 @@ const App: React.FC = () => {
         return () => clearInterval(timer);
     }, [isPaused]);
 
-    // Güzergah çizgisi — OSRM'den çekilen gerçek E-5 yol geometrisi (4148 nokta)
-    const routeLine: [number, number][] = METROBUS_ROUTE_GEOMETRY;
+    // Güzergah — artık edge-based offset rendering kullanılıyor (aşağıda)
 
     const statusLabel: Record<string, string> = {
         normal: '🟢 Normal',
@@ -279,21 +326,70 @@ const App: React.FC = () => {
                     zoomControl={false}
                 >
                     <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> | &copy; <a href="https://carto.com/">CARTO</a>'
-                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        key={mapTile}
+                        attribution={MAP_TILES[mapTile].attribution}
+                        url={MAP_TILES[mapTile].url}
                     />
 
-                    {/* Gidiş hattı (Beylikdüzü → Söğütlüçeşme) */}
-                    <Polyline
-                        positions={METROBUS_ROUTE_EAST.map(c => [c[0], c[1]] as [number, number])}
-                        pathOptions={{ color: '#4FC3F7', weight: 3, opacity: 0.7 }}
-                    />
+                    {/* Harita mod değiştirici */}
+                    <div style={{
+                        position: 'absolute', top: 12, right: 12, zIndex: 1000,
+                        display: 'flex', gap: 4, background: 'rgba(0,0,0,0.7)',
+                        borderRadius: 8, padding: 4,
+                    }}>
+                        {(Object.keys(MAP_TILES) as MapTileMode[]).map(mode => (
+                            <button
+                                key={mode}
+                                onClick={() => setMapTile(mode)}
+                                style={{
+                                    padding: '6px 12px', border: 'none', borderRadius: 6,
+                                    background: mapTile === mode ? '#4FC3F7' : 'transparent',
+                                    color: mapTile === mode ? '#000' : '#fff',
+                                    fontWeight: mapTile === mode ? 700 : 400,
+                                    cursor: 'pointer', fontSize: 13, transition: 'all 0.2s',
+                                }}
+                            >
+                                {MAP_TILES[mode].label}
+                            </button>
+                        ))}
+                    </div>
 
-                    {/* Dönüş hattı (Söğütlüçeşme → Beylikdüzü) */}
-                    <Polyline
-                        positions={METROBUS_ROUTE_WEST.map(c => [c[0], c[1]] as [number, number])}
-                        pathOptions={{ color: '#FF9800', weight: 3, opacity: 0.7 }}
-                    />
+                    {/* Gidiş — shared segmentlerde mikro-offset (+1.5m) */}
+                    {ROUTE_NETWORK.edges.gidis.map((edge) => (
+                        <Polyline
+                            key={edge.id}
+                            positions={edge.isSharedGeometry
+                                ? offsetPolyline(edge.geometry, 0.000015)
+                                : edge.geometry}
+                            pathOptions={{ color: '#4FC3F7', weight: 4, opacity: 0.85 }}
+                        />
+                    ))}
+
+                    {/* Dönüş — shared segmentlerde mikro-offset (-1.5m) */}
+                    {ROUTE_NETWORK.edges.donus.map((edge) => (
+                        <Polyline
+                            key={edge.id}
+                            positions={edge.isSharedGeometry
+                                ? offsetPolyline(edge.geometry, -0.000015)
+                                : edge.geometry}
+                            pathOptions={{ color: '#FF9800', weight: 4, opacity: 0.85 }}
+                        />
+                    ))}
+                    {/* Durak platform şeritleri — OSM platform way geometrileri */}
+                    {PLATFORM_GEOMETRIES.map((p) => (
+                        <Polyline
+                            key={`platform-${p.id}`}
+                            positions={p.geometry}
+                            pathOptions={{
+                                color: '#76FF03',
+                                weight: 5,
+                                opacity: 0.95,
+                                dashArray: undefined,
+                            }}
+                        >
+                            <Popup>{p.name}</Popup>
+                        </Polyline>
+                    ))}
 
                     {/* Durak işaretçileri */}
                     {STATION_LIST.map((s, i) => (
