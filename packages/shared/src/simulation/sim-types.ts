@@ -2,17 +2,44 @@
 // Simülasyon Tip Tanımları ve Config
 // =============================================
 
-/** Araç fazı — durak state machine */
+/** Araç tipi tanımı */
+export interface VehicleType {
+    /** Marka */
+    brand: string;
+    /** Model */
+    model: string;
+    /** Araç uzunluğu (metre) */
+    lengthMeters: number;
+    /** Kısa kod */
+    code: string;
+}
+
+/** Mevcut araç tipleri */
+export const VEHICLE_TYPES: VehicleType[] = [
+    { brand: 'Mercedes-Benz', model: 'Citaro', lengthMeters: 20, code: 'MB' },
+    { brand: 'Akia', model: 'Ultra High Capacity', lengthMeters: 25, code: 'AK' },
+];
+
+/** Peron içindeki araçlar arası boşluk (metre) */
+export const VEHICLE_GAP = 0.4;
+
+/** Araç fazı — durak state machine (Kuyruk Teorisi Modeli) */
 export type VehiclePhase =
     | 'cruising'      // Serbest seyir
     | 'approaching'   // Durağa yaklaşım (frenleme eğrisi)
-    | 'stopped'       // Durakta (kapı açık, yolcu alımı)
+    | 'queued'        // Peron girişinde bekleme (semaphore — slot yok)
+    | 'docking'       // Slot'a yavaş ilerleme (~2 m/s creep)
+    | 'stopped'       // Durakta (kapı açık, yolcu operasyonu)
+    | 'doorsClosed'   // Kapılar kapanıyor (2sn)
+    | 'blocked'       // İşlem bitti ama öndeki araç engel (FIFO)
     | 'departing';    // Kalkış (yumuşak ivme)
 
 /** Simüle edilen araç */
 export interface SimVehicle {
     id: number;
     code: string;
+    /** Araç tipi (marka, model, uzunluk) */
+    vehicleType: VehicleType;
     /** Hat üzerindeki pozisyon (metre, 0 = hat başı) */
     positionMeters: number;
     /** Anlık hız (m/s) */
@@ -38,6 +65,16 @@ export interface SimVehicle {
     totalDistance: number;
     /** Manuel override: null = yok, number = zorlanan max hız (m/s), 0 = tam dur */
     manualOverride: number | null;
+    /** Durak dışında kuyrukta mı? */
+    isQueuing: boolean;
+    /** Kuyrukta bekleme süresi (sn) */
+    queueWaitTime: number;
+    /** Son dwell süresi (gösterim için) */
+    lastDwellTime: number;
+    /** Durakta atanmış slot indexi (0 = ön/çıkış tarafı, slotCount-1 = arka/giriş tarafı) */
+    assignedSlotIndex: number;
+    /** Slot'un hat üzerindeki metre pozisyonu */
+    slotMeterPosition: number;
 }
 /** Trafik tıkanıklık bölgesi */
 export interface TrafficZone {
@@ -137,7 +174,7 @@ export const DEFAULT_SIM_CONFIG: SimConfig = {
     doorTime: 5.0,
     perPassengerTime: 1.5,
     minDwellTime: 15.0,
-    maxDwellTime: 60.0,
+    maxDwellTime: 30.0,
     approachDistance: 150.0,
 
     // Trafik

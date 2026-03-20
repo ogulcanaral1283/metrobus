@@ -5,13 +5,14 @@
 export type {
     SimVehicle,
     VehiclePhase,
+    VehicleType,
     SimConfig,
     SimState,
     TrafficZone,
     LinearStop,
 } from './sim-types';
 
-export { DEFAULT_SIM_CONFIG } from './sim-types';
+export { DEFAULT_SIM_CONFIG, VEHICLE_TYPES, VEHICLE_GAP } from './sim-types';
 
 export { SimEngine } from './sim-engine';
 

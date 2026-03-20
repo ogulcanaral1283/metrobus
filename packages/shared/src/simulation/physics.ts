@@ -60,20 +60,36 @@ export function computeTargetSpeed(
     // 1. Varsayılan segment hız limiti
     target = Math.min(target, config.defaultSpeedLimit);
 
-    // 2. Durak yaklaşım frenleme
+    // 2. Durak yaklaşım frenleme — kademeli piecewise eğri
     if (vehicle.nextStopIndex < stops.length) {
         const nextStop = stops[vehicle.nextStopIndex];
         const distToStop = nextStop.meterPosition - vehicle.positionMeters;
 
-        if (distToStop > 0 && distToStop < config.approachDistance) {
-            // Frenleme mesafesi: v² / (2×b) → v = √(2×b×d)
-            const brakingSpeed = Math.sqrt(2 * config.comfortBraking * Math.max(distToStop, 0.1));
-            target = Math.min(target, brakingSpeed);
+        // Departing fazında kalkış koruması: durağı yeni terk ediyorsa
+        // bir sonraki durağa hemen frenleme — en az 30m serbest ivmelenme
+        const isDeparting = vehicle.phase === 'departing';
 
-            // Son 5 metrede sıfıra indir
-            if (distToStop < 5) {
-                target = 0;
+        if (distToStop > 0 && distToStop < config.approachDistance && !isDeparting) {
+            let brakingTarget: number;
+
+            if (distToStop > 30) {
+                // 150m-30m arası: kademeli yavaşlama
+                // Mesafe oranıyla 60% max hızdan lineer düş
+                const ratio = (distToStop - 30) / (config.approachDistance - 30);
+                brakingTarget = 3.0 + ratio * (config.maxSpeed * 0.6 - 3.0);
+            } else if (distToStop > 10) {
+                // 30m-10m arası: güçlü frenleme, 3 m/s'e doğru
+                const ratio = (distToStop - 10) / 20;
+                brakingTarget = 1.0 + ratio * 2.0; // 3.0 → 1.0
+            } else if (distToStop > 3) {
+                // 10m-3m: creep hız
+                brakingTarget = 1.0;
+            } else {
+                // 3m altı: dur
+                brakingTarget = 0;
             }
+
+            target = Math.min(target, brakingTarget);
         }
     }
 
@@ -117,24 +133,27 @@ export function updateVehiclePhysics(
     leader: SimVehicle | null,
     config: SimConfig,
 ): void {
-    // Durakta ise fizik güncelleme yapma
-    if (vehicle.phase === 'stopped') return;
+    // Statik fazlar — FSM pozisyonu yönetir, fizik güncelleme yapma
+    // Paralel operasyonda araçlar yerinde kalır, ileri kayma yok
+    if (vehicle.phase === 'stopped' || vehicle.phase === 'doorsClosed' ||
+        vehicle.phase === 'queued' || vehicle.phase === 'blocked' ||
+        vehicle.phase === 'docking') return;
 
     let accel: number;
 
     if (leader) {
         // IDM: öndeki aracı takip et
-        const gap = leader.positionMeters - vehicle.positionMeters - 15; // 15m araç boyu
+        // Gap = öndeki aracın ARKA TAMPONU - bizim ön tamponumuz
+        const leaderRear = leader.positionMeters - (leader.vehicleType?.lengthMeters ?? 20);
+        const gap = leaderRear - vehicle.positionMeters;
         const deltaV = vehicle.speed - leader.speed;
-        accel = computeIDM(vehicle.speed, targetSpeed, gap, deltaV, config);
+        accel = computeIDM(vehicle.speed, targetSpeed, Math.max(0.1, gap), deltaV, config);
     } else {
         // Serbest sürüş: hedef hıza doğru ivmelen
         const speedDiff = targetSpeed - vehicle.speed;
         if (speedDiff > 0) {
-            // Hızlan
             accel = Math.min(config.maxAcceleration, speedDiff / dt);
         } else {
-            // Yavaşla
             accel = Math.max(-config.comfortBraking, speedDiff / dt);
         }
     }

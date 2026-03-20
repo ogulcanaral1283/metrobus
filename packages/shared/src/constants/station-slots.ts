@@ -1,6 +1,7 @@
 // Station Stop Positions — Overpass API'den
-// Generated: 2026-03-05T07:28:31.435Z
-// 42 durak, 77 stop_position
+// Generated: 2026-03-20T03:36:57.509498
+// Platform uzunlukları: Overpass platform way geometrisinden
+// 42 durak
 
 export interface StopPosition {
     id: number;
@@ -15,7 +16,7 @@ export interface StationSlotInfo {
     stopPositions: StopPosition[];
     /** Slot sayısı (kaç otobüs aynı anda durabilir) */
     slotCount: number;
-    /** Platform uzunluğu (metre) — en uzak iki slot arası */
+    /** Platform uzunluğu (metre) — Overpass platform way */
     platformLengthMeters: number;
 }
 
@@ -34,8 +35,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.6659231
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 77
+    "slotCount": 3,
+    "platformLengthMeters": 123
   },
   {
     "name": "Beylikdüzü",
@@ -52,7 +53,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 83
+    "platformLengthMeters": 94
   },
   {
     "name": "Haramidere",
@@ -68,8 +69,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.6732793
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 49
+    "slotCount": 3,
+    "platformLengthMeters": 151
   },
   {
     "name": "Avcılar Merkez-Üniversite Kampüsü",
@@ -85,8 +86,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7266736
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 54
+    "slotCount": 3,
+    "platformLengthMeters": 127
   },
   {
     "name": "Saadetdere Mahallesi",
@@ -103,7 +104,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 73
+    "platformLengthMeters": 118
   },
   {
     "name": "Haramidere Sanayi",
@@ -119,8 +120,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.6851377
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 76
+    "slotCount": 3,
+    "platformLengthMeters": 151
   },
   {
     "name": "Beykent",
@@ -136,8 +137,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.6311682
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 39
+    "slotCount": 3,
+    "platformLengthMeters": 128
   },
   {
     "name": "Şükrübey",
@@ -153,8 +154,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7327341
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 101
+    "slotCount": 3,
+    "platformLengthMeters": 135
   },
   {
     "name": "Büyükşehir Belediyesi Sosyal Tesisleri",
@@ -171,7 +172,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 67
+    "platformLengthMeters": 84
   },
   {
     "name": "Cennet Mahallesi",
@@ -188,7 +189,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 44
+    "platformLengthMeters": 118
   },
   {
     "name": "Yenibosna",
@@ -204,8 +205,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.833693
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 174
+    "slotCount": 4,
+    "platformLengthMeters": 206
   },
   {
     "name": "Şirinevler",
@@ -221,8 +222,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.8468846
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 98
+    "slotCount": 3,
+    "platformLengthMeters": 125
   },
   {
     "name": "Bahçelievler",
@@ -239,7 +240,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 71
+    "platformLengthMeters": 104
   },
   {
     "name": "İncirli",
@@ -255,8 +256,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.8744136
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 87
+    "slotCount": 4,
+    "platformLengthMeters": 187
   },
   {
     "name": "Zeytinburnu",
@@ -273,7 +274,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 82
+    "platformLengthMeters": 117
   },
   {
     "name": "Merter",
@@ -290,7 +291,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 69
+    "platformLengthMeters": 118
   },
   {
     "name": "Cevizlibağ",
@@ -306,8 +307,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.9117377
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 65
+    "slotCount": 4,
+    "platformLengthMeters": 210
   },
   {
     "name": "Topkapı - Şehit Mustafa Cambaz",
@@ -324,7 +325,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 7
+    "platformLengthMeters": 55
   },
   {
     "name": "Bayrampaşa - Maltepe / Koç Üniversitesi Hastanesi",
@@ -341,7 +342,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 69
+    "platformLengthMeters": 99
   },
   {
     "name": "Edirnekapı",
@@ -358,7 +359,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 85
+    "platformLengthMeters": 112
   },
   {
     "name": "Ayvansaray Eyüpsultan",
@@ -374,8 +375,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.9384376
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 102
+    "slotCount": 3,
+    "platformLengthMeters": 121
   },
   {
     "name": "Söğütlüçeşme",
@@ -392,7 +393,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 44
+    "platformLengthMeters": 115
   },
   {
     "name": "Fikirtepe",
@@ -409,7 +410,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 53
+    "platformLengthMeters": 91
   },
   {
     "name": "Uzunçayır",
@@ -426,7 +427,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 54
+    "platformLengthMeters": 103
   },
   {
     "name": "Acıbadem",
@@ -442,8 +443,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 29.0575861
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 86
+    "slotCount": 4,
+    "platformLengthMeters": 177
   },
   {
     "name": "Halıcıoğlu",
@@ -459,8 +460,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.9466187
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 73
+    "slotCount": 3,
+    "platformLengthMeters": 121
   },
   {
     "name": "Okmeydanı",
@@ -477,7 +478,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 68
+    "platformLengthMeters": 101
   },
   {
     "name": "Darülaceze - Perpa",
@@ -494,7 +495,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 52
+    "platformLengthMeters": 110
   },
   {
     "name": "Okmeydanı Hastane Metrobüs durağı",
@@ -511,7 +512,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 50
+    "platformLengthMeters": 101
   },
   {
     "name": "Çağlayan",
@@ -527,8 +528,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.9815307
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 80
+    "slotCount": 3,
+    "platformLengthMeters": 130
   },
   {
     "name": "Mecidiyeköy",
@@ -545,7 +546,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 56
+    "platformLengthMeters": 113
   },
   {
     "name": "15 Temmuz Şehitler Köprüsü",
@@ -561,8 +562,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 29.0435397
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 191
+    "slotCount": 4,
+    "platformLengthMeters": 232
   },
   {
     "name": "Zincirlikuyu",
@@ -578,8 +579,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 29.0130926
       }
     ],
-    "slotCount": 2,
-    "platformLengthMeters": 54
+    "slotCount": 3,
+    "platformLengthMeters": 138
   },
   {
     "name": "Altunizade",
@@ -596,7 +597,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 108
+    "platformLengthMeters": 90
   },
   {
     "name": "Burhaniye",
@@ -613,7 +614,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
       }
     ],
     "slotCount": 2,
-    "platformLengthMeters": 36
+    "platformLengthMeters": 62
   },
   {
     "name": "Cumhuriyet Mahallesi",
@@ -624,8 +625,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.6413758
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 2,
+    "platformLengthMeters": 118
   },
   {
     "name": "Beylikdüzü Belediye",
@@ -636,8 +637,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.6488069
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 2,
+    "platformLengthMeters": 94
   },
   {
     "name": "Mustafa Kemalpaşa",
@@ -648,8 +649,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7060398
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 3,
+    "platformLengthMeters": 143
   },
   {
     "name": "Küçükçekmece",
@@ -660,8 +661,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7696721
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 2,
+    "platformLengthMeters": 83
   },
   {
     "name": "Florya",
@@ -672,8 +673,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7881632
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 2,
+    "platformLengthMeters": 86
   },
   {
     "name": "Beşyol",
@@ -684,8 +685,8 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7948098
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 2,
+    "platformLengthMeters": 115
   },
   {
     "name": "Sefaköy",
@@ -696,7 +697,7 @@ export const STATION_SLOTS: StationSlotInfo[] = [
         "lon": 28.7979256
       }
     ],
-    "slotCount": 1,
-    "platformLengthMeters": 0
+    "slotCount": 2,
+    "platformLengthMeters": 109
   }
 ];

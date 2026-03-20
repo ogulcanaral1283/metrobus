@@ -4,7 +4,7 @@
 // =============================================
 
 import type { SimVehicle, SimConfig, SimState, TrafficZone, LinearStop } from './sim-types';
-import { DEFAULT_SIM_CONFIG } from './sim-types';
+import { DEFAULT_SIM_CONFIG, VEHICLE_TYPES } from './sim-types';
 import type { LinearRoute } from './route-linearizer';
 import { linearizeRoute, meterToPosition } from './route-linearizer';
 import { computeTargetSpeed, updateVehiclePhysics } from './physics';
@@ -85,9 +85,12 @@ export class SimEngine {
         }
 
         const dirLabel = this.route.direction === 'gidis' ? 'G' : 'D';
+        // %60 Mercedes (20m), %40 Akia (25m)
+        const vehicleType = Math.random() < 0.6 ? VEHICLE_TYPES[0] : VEHICLE_TYPES[1];
         const vehicle: SimVehicle = {
             id,
             code: `${dirLabel}${String(id).padStart(3, '0')}`,
+            vehicleType,
             positionMeters: pos,
             speed: 5 + Math.random() * 5, // 5-10 m/s başlangıç
             acceleration: 0,
@@ -101,6 +104,11 @@ export class SimEngine {
             totalStops: 0,
             totalDistance: 0,
             manualOverride: null,
+            isQueuing: false,
+            queueWaitTime: 0,
+            lastDwellTime: 0,
+            assignedSlotIndex: -1,
+            slotMeterPosition: 0,
         };
 
         this.vehicles.push(vehicle);
@@ -161,10 +169,29 @@ export class SimEngine {
             this.trafficZones, dt, this.route.totalLength, this.config, isRush,
         );
 
-        // 2. Araçları pozisyona göre sırala (öndeki araç tespiti için)
+        // 2. Her durakta kaç araç durduğunu ve hangi slot'ların dolu olduğunu hesapla
+        const stationOccupancy = new Map<number, number>();
+        const occupiedSlots = new Map<string, Set<number>>();
+        for (const v of this.vehicles) {
+            // Perondaki tüm araçları say: stopped, doorsClosed, blocked, docking
+            if (v.phase === 'stopped' || v.phase === 'doorsClosed' ||
+                v.phase === 'blocked' || v.phase === 'docking') {
+                const stopIdx = v.nextStopIndex;
+                stationOccupancy.set(stopIdx, (stationOccupancy.get(stopIdx) ?? 0) + 1);
+
+                // Hangi slot dolu?
+                if (v.assignedSlotIndex >= 0) {
+                    const key = `s${stopIdx}`;
+                    if (!occupiedSlots.has(key)) occupiedSlots.set(key, new Set());
+                    occupiedSlots.get(key)!.add(v.assignedSlotIndex);
+                }
+            }
+        }
+
+        // 3. Araçları pozisyona göre sırala (öndeki araç tespiti için)
         const sorted = [...this.vehicles].sort((a, b) => a.positionMeters - b.positionMeters);
 
-        // 3. Her araç için fizik + durak FSM güncelle
+        // 4. Her araç için fizik + durak FSM güncelle
         for (let i = 0; i < sorted.length; i++) {
             const vehicle = sorted[i];
 
@@ -185,11 +212,21 @@ export class SimEngine {
 
             // Durak FSM (manuel override yoksa)
             if (vehicle.manualOverride === null) {
-                updateStationFSM(vehicle, dt, this.route.stops, this.config, isRush);
+                updateStationFSM(vehicle, dt, this.route.stops, this.config, isRush, stationOccupancy, occupiedSlots, this.vehicles);
             }
 
-            // Durakta ise fizik atlama
-            if (vehicle.phase === 'stopped' && vehicle.manualOverride === null) {
+            // Peronda statik fazlar: FSM pozisyonu yönetir, fizik ATLAMA
+            // Paralel operasyon: araç nerede durduysa orada kalır
+            if ((vehicle.phase === 'stopped' || vehicle.phase === 'doorsClosed' ||
+                vehicle.phase === 'queued' || vehicle.phase === 'blocked') &&
+                vehicle.manualOverride === null) {
+                // FSM zaten pozisyonu ayarladı — sadece lat/lng güncelle
+                this.updatePosition(vehicle);
+                continue;
+            }
+
+            // Docking fazında fizik FSM tarafından yönetilir
+            if (vehicle.phase === 'docking' && vehicle.manualOverride === null) {
                 this.updatePosition(vehicle);
                 continue;
             }
@@ -215,6 +252,8 @@ export class SimEngine {
                 vehicle.positionMeters = 0;
                 vehicle.nextStopIndex = 0;
                 vehicle.phase = 'cruising';
+                vehicle.isQueuing = false;
+                vehicle.queueWaitTime = 0;
             }
 
             // Lat/lng güncelle

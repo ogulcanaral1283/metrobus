@@ -63,3 +63,5 @@ export type { SimVehicle, VehiclePhase, SimConfig, SimState, TrafficZone, Linear
 // Station Slots
 export { STATION_SLOTS } from './constants/station-slots';
 export type { StationSlotInfo, StopPosition } from './constants/station-slots';
+export { PLATFORM_ENTRIES } from './constants/platform-entries';
+export type { PlatformEntry } from './constants/platform-entries';
