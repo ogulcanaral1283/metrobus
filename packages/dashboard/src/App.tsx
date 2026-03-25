@@ -22,6 +22,16 @@ if (typeof document !== 'undefined' && !document.getElementById(BUNCHING_STYLE_I
             50% { box-shadow: 0 0 10px 5px rgba(255,152,0,0.6); }
         }
         .bunch-pulse-warn { animation: bunchPulseWarn 1.5s ease-in-out infinite; }
+        @keyframes speedFilterPulse {
+            0%, 100% { box-shadow: 0 0 4px 2px rgba(0,188,212,0.3); }
+            50% { box-shadow: 0 0 10px 5px rgba(0,188,212,0.7); }
+        }
+        .speed-filter-pulse { animation: speedFilterPulse 1.2s ease-in-out infinite; }
+        @keyframes bunchAcceptPulse {
+            0%, 100% { box-shadow: 0 0 4px 2px rgba(255,87,34,0.3); }
+            50% { box-shadow: 0 0 8px 4px rgba(255,87,34,0.6); }
+        }
+        .bunch-accept-pulse { animation: bunchAcceptPulse 1.5s ease-in-out infinite; }
     `;
     document.head.appendChild(style);
 }
@@ -115,16 +125,41 @@ function vehicleIcon(vehicle: SimVehicle) {
     const v = vehicle as any;
     const isBunched = v.isBunched || false;
     const warning = v.bunchingWarning;
-    const pulseClass = warning === 'critical' ? 'bunch-pulse' : warning === 'warning' ? 'bunch-pulse-warn' : '';
-    const border = isBunched ? '#F44336' : '#fff';
+    const predictive = v.predictiveDecision;
+
+    // Pulse class önceliği: predictive > bunching
+    let pulseClass = '';
+    let border = '#fff';
+    if (predictive?.decision === 'SPEED_FILTER') {
+        pulseClass = 'speed-filter-pulse';
+        border = '#00BCD4';  // Cyan
+    } else if (predictive?.decision === 'BUNCHING_ACCEPT') {
+        pulseClass = 'bunch-accept-pulse';
+        border = '#FF5722';  // Turuncu-kırmızı
+    } else if (warning === 'critical') {
+        pulseClass = 'bunch-pulse';
+        border = '#F44336';
+    } else if (warning === 'warning') {
+        pulseClass = 'bunch-pulse-warn';
+        border = isBunched ? '#F44336' : '#fff';
+    } else if (isBunched) {
+        border = '#F44336';
+    }
 
     // Araç boyutları (harita üzerinde piksel)
     const vt = vehicle.vehicleType;
-    const busW = vt?.code === 'AK' ? 36 : 30; // Akia daha uzun
+    const busW = vt?.code === 'AK' ? 36 : 30;
     const busH = 12;
-    const rot = (vehicle.heading || 0) - 90; // SVG yatay → heading'e çevir
+    const rot = (vehicle.heading || 0) - 90;
     const typeCode = vt?.code || 'MB';
     const dirColor = vehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726';
+
+    // Predictive gösterge ikonu
+    const peIndicator = predictive?.decision === 'SPEED_FILTER'
+        ? `<circle cx="${busW - 3}" cy="3" r="3" fill="#00BCD4" stroke="#fff" stroke-width="0.5"/>`
+        : predictive?.decision === 'BUNCHING_ACCEPT'
+            ? `<circle cx="${busW - 3}" cy="3" r="3" fill="#FF5722" stroke="#fff" stroke-width="0.5"/>`
+            : '';
 
     return L.divIcon({
         className: '',
@@ -141,6 +176,7 @@ function vehicleIcon(vehicle: SimVehicle) {
                 <line x1="8" y1="1.5" x2="8" y1="1.5" y2="${busH - 1.5}" stroke="#fff" stroke-width="0.5" opacity="0.3"/>
                 <text x="${busW / 2}" y="${busH / 2 + 1}" text-anchor="middle" dominant-baseline="middle"
                     font-size="6" fill="#fff" font-weight="700" font-family="Inter,sans-serif">${typeCode}</text>
+                ${peIndicator}
             </svg>
         </div>`,
         iconSize: [busW, busH],
@@ -223,7 +259,7 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle; onClick: () => void }> = ({
             m.setLatLng([vehicle.latitude, vehicle.longitude]);
             m.setIcon(vehicleIcon(vehicle));
         }
-    }, [vehicle.latitude, vehicle.longitude, vehicle.phase, vehicle.speed, (vehicle as any).isBunched]);
+    }, [vehicle.latitude, vehicle.longitude, vehicle.phase, vehicle.speed, (vehicle as any).isBunched, (vehicle as any).predictiveDecision?.decision]);
 
     return (
         <Marker
@@ -282,6 +318,27 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle; onClick: () => void }> = ({
                     {vehicle.manualOverride !== null && (
                         <div style={{ marginTop: '4px', fontSize: '10px', color: '#F44336', fontWeight: 700 }}>
                             ⬤ MANUEL KONTROL: {vehicle.manualOverride === 0 ? 'DURDURULDU' : `Max ${vehicle.manualOverride} m/s`}
+                        </div>
+                    )}
+                    {/* Predictive Engine Kararı */}
+                    {(vehicle as any).predictiveDecision && (
+                        <div style={{
+                            marginTop: '4px', padding: '4px 6px', borderRadius: '4px',
+                            background: (vehicle as any).predictiveDecision.decision === 'SPEED_FILTER'
+                                ? 'rgba(0,188,212,0.15)' : 'rgba(255,87,34,0.15)'
+                        }}>
+                            <div style={{
+                                fontSize: '10px', fontWeight: 700,
+                                color: (vehicle as any).predictiveDecision.decision === 'SPEED_FILTER' ? '#00BCD4' : '#FF5722'
+                            }}>
+                                🧠 {(vehicle as any).predictiveDecision.decision === 'SPEED_FILTER' ? 'Hız Filtreleme' : 'Bunching Kabul'}
+                            </div>
+                            <div style={{ fontSize: '9px', color: '#aaa', marginTop: '2px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
+                                <span>Score A: <b style={{ color: '#fff' }}>{(vehicle as any).predictiveDecision.scoreA}</b></span>
+                                <span>Score B: <b style={{ color: '#fff' }}>{(vehicle as any).predictiveDecision.scoreB}</b></span>
+                                <span>Kazanç: <b style={{ color: (vehicle as any).predictiveDecision.timeSaved > 0 ? '#4CAF50' : '#F44336' }}>{(vehicle as any).predictiveDecision.timeSaved}s</b></span>
+                                <span>Hedef: <b style={{ color: '#00BCD4' }}>{((vehicle as any).predictiveDecision.vTarget * 3.6).toFixed(0)} km/h</b></span>
+                            </div>
                         </div>
                     )}
                     <div style={{ marginTop: '4px', fontSize: '9px', color: '#666' }}>
@@ -564,6 +621,29 @@ const App: React.FC = () => {
                                     }}>{p.gap}m</span>
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ===== PREDICTIVE ENGINE ===== */}
+                {trainingMode && trainingData?.predictiveEngine && (
+                    <div style={{ padding: '8px 16px', borderTop: '1px solid rgba(0,188,212,0.3)' }}>
+                        <h3 style={{ color: '#00BCD4', fontSize: '12px', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            🧠 Predictive Engine
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '11px' }}>
+                            <div style={{ background: 'rgba(0,188,212,0.15)', padding: '4px 6px', borderRadius: '4px', textAlign: 'center' }}>
+                                <div style={{ color: '#00BCD4', fontWeight: 700 }}>
+                                    {trainingData.predictiveEngine.speed_filter_count || 0}
+                                </div>
+                                <div style={{ color: '#aaa', fontSize: '9px' }}>Hız Filtre</div>
+                            </div>
+                            <div style={{ background: 'rgba(255,87,34,0.15)', padding: '4px 6px', borderRadius: '4px', textAlign: 'center' }}>
+                                <div style={{ color: '#FF5722', fontWeight: 700 }}>
+                                    {trainingData.predictiveEngine.bunching_accept_count || 0}
+                                </div>
+                                <div style={{ color: '#aaa', fontSize: '9px' }}>Bunching Kabul</div>
+                            </div>
                         </div>
                     </div>
                 )}

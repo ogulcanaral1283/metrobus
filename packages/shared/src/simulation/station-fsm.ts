@@ -49,9 +49,9 @@ function isInsidePlatformZone(
 ): boolean {
     const vehicleRear = vehiclePosition - vehicleLength;
     const platformStart = stop.meterPosition - stop.platformLengthMeters;
-    const platformEnd = stop.meterPosition + 2; // 2m tolerans
+    const platformEnd = stop.meterPosition + 15; // 15m tolerans — uzun araçlar peronun ucunda düşmemeli
 
-    return vehiclePosition <= platformEnd && vehicleRear >= platformStart - 1;
+    return vehiclePosition <= platformEnd && vehicleRear >= platformStart - 2;
 }
 
 /**
@@ -200,12 +200,10 @@ export function updateStationFSM(
         // CRUISING
         // ============================================
         case 'cruising': {
-            // Peron alanına girildiyse → approaching'e geç
-            // (uzun peronlarda approachDistance'dan ÖNCE girilebilir)
             const vLen = vehicle.vehicleType.lengthMeters;
-            const inPlatformZone = isInsidePlatformZone(vehicle.positionMeters, vLen, nextStop);
+            const inZone = isInsidePlatformZone(vehicle.positionMeters, vLen, nextStop);
 
-            if (inPlatformZone && distToStop > 0) {
+            if (inZone) {
                 vehicle.phase = 'approaching';
                 break;
             }
@@ -214,7 +212,9 @@ export function updateStationFSM(
             if (distToStop > 0 && distToStop < config.approachDistance) {
                 vehicle.phase = 'approaching';
             }
-            if (distToStop <= 0) {
+
+            // Sadece peronu tamamen geçtiyse ve peron içinde değilse hedefi değiştir
+            if (distToStop < -15 && !inZone) {
                 vehicle.nextStopIndex++;
             }
             break;
@@ -279,12 +279,13 @@ export function updateStationFSM(
                 break;
             }
 
-            // === PERON ALANI DIŞINDA — eski mantık (yaklaşma) ===
+            // === PERON ALANI DIŞINDA — yaklaşma (distToStop bazlı fallback) ===
             const platformVehicles = getVehiclesOnPlatform(vehicle.nextStopIndex, vehicleList);
             const entryPos = computeEntryPosition(nextStop, platformVehicles);
 
+            // inZone true ise bu blok zaten çalışmaz (yukarıda break edildi)
             if (vehicle.speed < 3.0 && distToStop < 8 && distToStop > -5) {
-                if (fitsInPlatform(entryPos, vehicle.vehicleType.lengthMeters, nextStop)) {
+                if (fitsInPlatform(entryPos, vLen, nextStop)) {
                     vehicle.phase = 'docking';
                     vehicle.isQueuing = false;
                     vehicle.queueWaitTime = 0;
@@ -298,7 +299,9 @@ export function updateStationFSM(
             }
 
             // Durağı geçtiyse → zorla docking
-            if (distToStop <= -5) {
+            // Platform uzunluğunu hesaba kat (uzun peronlarda -5 yetersiz)
+            const overshootLimit = Math.max(5, nextStop.platformLengthMeters * 0.5);
+            if (distToStop <= -overshootLimit) {
                 vehicle.phase = 'docking';
                 vehicle.isQueuing = false;
                 vehicle.slotMeterPosition = entryPos;

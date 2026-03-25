@@ -1,0 +1,58 @@
+# ============================================
+# Metrobus MAPPO - Faz 1: Yogun Kisa Rota
+# ============================================
+# 15 durak (~15km) + 20 arac = 750m aralikla
+# Bunching gercekten yasanacak!
+
+# --- Ortam ---
+direction: "gidis"
+num_buses: 30                # Yogun trafik! 14.5km / 30 = 483m aralik
+max_stops: 15                # Ilk 15 durak (~14.5km segment)
+dt: 0.1
+episode_length: 18000        # 30 dakika
+
+# --- Curriculum ---
+use_fixed_dwell: true        # Sabit dwell (deterministik)
+fixed_dwell_seconds: 15.0
+randomize_start_hour: true
+curriculum_phase: 1
+
+# --- PPO ---
+learning_rate: 0.0003
+gamma: 0.99
+gae_lambda: 0.95
+epsilon: 0.2
+epochs: 10
+batch_size: 4096             # 4096 x 0.1s = 6.8dk sim zamani (512 cok kisaydi)
+mini_batch_size: 256         # Daha buyuk mini-batch
+entropy_coef: 0.02           # Arttirildi: cesitli aksiyon icin
+value_coef: 0.5
+max_grad_norm: 0.5
+
+# --- Ag ---
+actor_hidden: 128            # Buyutuldu: 22 obs boyutu
+critic_hidden: 256           # Buyuk: 30 arac x 14 obs = 420 dim global
+obs_dim: 24                  # 22 -> 24 (+slot kapasitesi)
+action_dim: 4
+
+# --- Egitim ---
+total_iterations: 2000
+checkpoint_interval: 50
+eval_interval: 100
+log_interval: 10
+
+# --- Reward ---
+headway_weight: 1.0
+bunching_penalty: 0.5
+skip_penalty: 0.1
+long_dwell_penalty: 0.1
+speed_bonus_weight: 0.3
+target_speed_kmh: 40
+
+# --- GPU ---
+use_cuda: true
+
+# --- Cikti ---
+checkpoint_dir: "checkpoints/phase1"
+log_dir: "logs/phase1"
+export_dir: "exports"
