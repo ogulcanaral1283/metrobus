@@ -161,26 +161,38 @@ function vehicleIcon(vehicle: SimVehicle) {
             ? `<circle cx="${busW - 3}" cy="3" r="3" fill="#FF5722" stroke="#fff" stroke-width="0.5"/>`
             : '';
 
+    // Hit area büyütme: görsel boyut aynı kalır, tıklama alanı daha geniş
+    const padX = 8;
+    const padY = 8;
+    const hitW = busW + padX * 2;
+    const hitH = busH + padY * 2;
+
     return L.divIcon({
         className: '',
-        html: `<div class="${pulseClass}" style="
-            width:${busW}px;height:${busH}px;
+        html: `<div style="
+            width:${hitW}px;height:${hitH}px;
             transform:rotate(${rot}deg);
             transform-origin:center center;
+            cursor:pointer;
         ">
-            <svg width="${busW}" height="${busH}" viewBox="0 0 ${busW} ${busH}">
-                <rect x="1" y="1" width="${busW - 2}" height="${busH - 2}" rx="3" ry="3"
-                    fill="${c}" stroke="${border}" stroke-width="1.5"/>
-                <rect x="2" y="2" width="3" height="${busH - 4}" rx="1" fill="${dirColor}" opacity="0.8"/>
-                <rect x="${busW - 5}" y="2" width="3" height="${busH - 4}" rx="1" fill="#fff" opacity="0.4"/>
-                <line x1="8" y1="1.5" x2="8" y1="1.5" y2="${busH - 1.5}" stroke="#fff" stroke-width="0.5" opacity="0.3"/>
-                <text x="${busW / 2}" y="${busH / 2 + 1}" text-anchor="middle" dominant-baseline="middle"
-                    font-size="6" fill="#fff" font-weight="700" font-family="Inter,sans-serif">${typeCode}</text>
-                ${peIndicator}
-            </svg>
+            <div class="${pulseClass}" style="
+                position:absolute;top:${padY}px;left:${padX}px;
+                width:${busW}px;height:${busH}px;
+            ">
+                <svg width="${busW}" height="${busH}" viewBox="0 0 ${busW} ${busH}">
+                    <rect x="1" y="1" width="${busW - 2}" height="${busH - 2}" rx="3" ry="3"
+                        fill="${c}" stroke="${border}" stroke-width="1.5"/>
+                    <rect x="2" y="2" width="3" height="${busH - 4}" rx="1" fill="${dirColor}" opacity="0.8"/>
+                    <rect x="${busW - 5}" y="2" width="3" height="${busH - 4}" rx="1" fill="#fff" opacity="0.4"/>
+                    <line x1="8" y1="1.5" x2="8" y1="1.5" y2="${busH - 1.5}" stroke="#fff" stroke-width="0.5" opacity="0.3"/>
+                    <text x="${busW / 2}" y="${busH / 2 + 1}" text-anchor="middle" dominant-baseline="middle"
+                        font-size="6" fill="#fff" font-weight="700" font-family="Inter,sans-serif">${typeCode}</text>
+                    ${peIndicator}
+                </svg>
+            </div>
         </div>`,
-        iconSize: [busW, busH],
-        iconAnchor: [busW / 2, busH / 2],
+        iconSize: [hitW, hitH],
+        iconAnchor: [hitW / 2, hitH / 2],
     });
 }
 
@@ -358,7 +370,7 @@ const App: React.FC = () => {
     const gidisRef = useRef<SimEngine | null>(null);
     const donusRef = useRef<SimEngine | null>(null);
     const [simState, setSimState] = useState<{ gidis: SimState | null; donus: SimState | null }>({ gidis: null, donus: null });
-    const [selectedVehicle, setSelectedVehicle] = useState<SimVehicle | null>(null);
+    const [selectedVehicleKey, setSelectedVehicleKey] = useState<{ id: number; direction: string } | null>(null);
     const [tick, setTick] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
     const [timeScale, setTimeScale] = useState(5);
@@ -473,15 +485,24 @@ const App: React.FC = () => {
 
     const getEngine = (dir: 'gidis' | 'donus') => dir === 'gidis' ? gidisRef.current : donusRef.current;
 
-    // Seçili aracı her güncelleme ile senkronize et (canlı veri)
+    // Seçili aracı her tick'te CANLI vehicles dizisinden bul (stale snapshot sorunu yok)
     const activeVehicle = useMemo(() => {
-        if (!selectedVehicle) return null;
-        // Training modda sadece id ile eşle (tüm araçlar aynı yön)
-        if (trainingMode) {
-            return vehicles.find(v => v.id === selectedVehicle.id) || selectedVehicle;
+        if (!selectedVehicleKey) return null;
+        // Önce id + direction ile tam eşleşme dene
+        const exact = vehicles.find(v => v.id === selectedVehicleKey.id && v.direction === selectedVehicleKey.direction);
+        if (exact) return exact;
+        // Training modda veya fallback: sadece id ile
+        return vehicles.find(v => v.id === selectedVehicleKey.id) || null;
+    }, [vehicles, selectedVehicleKey]);
+
+    // Araç seçim helper — sadece key'i sakla, snapshot değil
+    const selectVehicle = useCallback((v: SimVehicle | null) => {
+        if (v) {
+            setSelectedVehicleKey({ id: v.id, direction: v.direction });
+        } else {
+            setSelectedVehicleKey(null);
         }
-        return vehicles.find(v => v.id === selectedVehicle.id && v.direction === selectedVehicle.direction) || selectedVehicle;
-    }, [vehicles, selectedVehicle, trainingMode]);
+    }, []);
 
     // Per-vehicle komutlar
     const cmdStop = (v: SimVehicle) => getEngine(v.direction)?.stopVehicle(v.id);
@@ -490,7 +511,7 @@ const App: React.FC = () => {
     const cmdAddVehicle = (dir: 'gidis' | 'donus') => getEngine(dir)?.spawnVehicle();
     const cmdRemoveVehicle = (v: SimVehicle) => {
         getEngine(v.direction)?.removeVehicle(v.id);
-        if (selectedVehicle?.id === v.id) setSelectedVehicle(null);
+        if (selectedVehicleKey?.id === v.id) setSelectedVehicleKey(null);
     };
 
 
@@ -707,8 +728,8 @@ const App: React.FC = () => {
                     {vehicles.map(v => (
                         <div
                             key={`${v.direction}-${v.id}`}
-                            className={`vehicle-card ${selectedVehicle?.id === v.id && selectedVehicle?.direction === v.direction ? 'selected' : ''}`}
-                            onClick={() => setSelectedVehicle(v)}
+                            className={`vehicle-card ${selectedVehicleKey?.id === v.id && selectedVehicleKey?.direction === v.direction ? 'selected' : ''}`}
+                            onClick={() => selectVehicle(v)}
                         >
                             <div className="vehicle-card-header">
                                 <span className="vehicle-code">
@@ -889,7 +910,7 @@ const App: React.FC = () => {
 
                     {/* Araç işaretçileri — pozisyon imperatively güncellenir */}
                     {vehicles.map(v => (
-                        <VehicleMarker key={`${v.direction}-${v.id}`} vehicle={v} onClick={() => setSelectedVehicle(v)} />
+                        <VehicleMarker key={`${v.direction}-${v.id}`} vehicle={v} onClick={() => selectVehicle(v)} />
                     ))}
 
                     {/* Bunching çizgileri — bunched araç çiftleri arası kırmızı/turuncu kesikli çizgi */}
@@ -921,7 +942,7 @@ const App: React.FC = () => {
                                     {activeVehicle.direction === 'gidis' ? '→ Gidiş' : '← Dönüş'}
                                 </span>
                             </h3>
-                            <button className="close-btn" onClick={() => setSelectedVehicle(null)}>✕</button>
+                            <button className="close-btn" onClick={() => selectVehicle(null)}>✕</button>
                         </div>
                         <div className="detail-body">
                             <div className="detail-row">
