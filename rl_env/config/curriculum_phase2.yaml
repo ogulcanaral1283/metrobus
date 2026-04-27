@@ -7,6 +7,7 @@
 # --- Ortam ---
 direction: "gidis"
 num_buses: 15                # Daha fazla arac
+max_stops: 15                # Phase 1 ile ayni segment (tutarlilik)
 dt: 0.1
 episode_length: 36000        # 1 saat (tam senaryo)
 
@@ -30,9 +31,9 @@ value_coef: 0.5
 max_grad_norm: 0.5
 
 # --- Ag ---
-actor_hidden: 64
-critic_hidden: 128
-obs_dim: 14
+actor_hidden: 128            # Phase 1 ile ayni (warmstart uyumlulugu)
+critic_hidden: 256           # Phase 1 ile ayni (warmstart uyumlulugu)
+obs_dim: 24                  # GPU env 24 boyutlu obs uretiyor
 action_dim: 4
 
 # --- Egitim ---

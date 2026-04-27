@@ -1,0 +1,101 @@
+% ============================================================
+% Intelligent Metrobus Fleet Management:
+% A Hybrid Analytical-RL Approach Using MAPPO
+% with GPU-Accelerated Simulation
+% ============================================================
+\documentclass[conference]{IEEEtran}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{multirow}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\begin{document}
+
+\title{Intelligent Metrobus Fleet Management:\\
+A Hybrid Analytical-RL Approach Using MAPPO\\
+with GPU-Accelerated Simulation}
+
+\author{
+\IEEEauthorblockN{O\u{g}ulcan Aral}
+\IEEEauthorblockA{
+Department of Computer Engineering\\
+Istanbul, Turkey\\
+ogulcan@example.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Bus bunching---the tendency of transit vehicles to cluster together and deviate from planned headways---represents one of the most persistent challenges in high-capacity Bus Rapid Transit (BRT) systems. Istanbul's Metrobus corridor, serving over 1 million daily passengers across 52\,km with 44 stations, experiences severe bunching during peak hours, leading to dramatically uneven passenger loads and extended wait times.
+
+This paper presents two complementary approaches for real-time fleet speed management on the Istanbul Metrobus line: (1) a Multi-Agent Proximal Policy Optimization (MAPPO) framework where each vehicle operates as an independent reinforcement learning agent, and (2) a deterministic analytical controller using PID headway regulation with slot lookahead optimization. Both systems are evaluated on a high-fidelity GPU-accelerated simulation environment featuring real-world route geometry from OpenStreetMap, Intelligent Driver Model (IDM) car-following physics, and an 8-phase station Finite State Machine with parallel platform docking.
+
+Training is performed on an NVIDIA RTX 5070 Ti GPU using CUDA Graph-captured vectorized environments (512 parallel instances $\times$ 200 vehicles), achieving approximately 20,000 simulation steps per second. Comparative benchmarking demonstrates the analytical controller's competitive performance without any training requirement, while MAPPO shows potential for learning adaptive strategies in stochastic conditions. The trained policy is exportable as a 23\,KB ONNX model for edge deployment.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Multi-Agent Reinforcement Learning, MAPPO, Bus Bunching, Fleet Management, GPU-Accelerated Simulation, Intelligent Transportation Systems, Bus Rapid Transit
+\end{IEEEkeywords}
+
+% ─── SECTIONS ───
+\input{01_introduction}
+% \input{02_related_work}
+% \input{03_simulation}
+% \input{04_ai_models}
+% \input{05_gpu_optimization}
+% \input{06_experiments}
+% \input{07_conclusion}
+
+% ─── REFERENCES ───
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{10}
+
+\bibitem{daganzo2009headway}
+C.~F. Daganzo, ``A headway-based approach to eliminate bus bunching: Systematic analysis and comparisons,'' \textit{Transportation Research Part B: Methodological}, vol.~43, no.~10, pp.~913--921, 2009.
+
+\bibitem{osuna1972control}
+E.~E. Osuna and G.~F. Newell, ``Control strategies for an idealized public transportation system,'' \textit{Transportation Science}, vol.~6, no.~1, pp.~52--72, 1972.
+
+\bibitem{cats2011impacts}
+O.~Cats, A.~Laber, F.~Jenelius, and A.~Raney, ``Impacts of holding control strategies on transit performance,'' \textit{Transportation Research Record}, vol.~2216, pp.~51--58, 2011.
+
+\bibitem{lowe2017multi}
+R.~Lowe, Y.~Wu, A.~Tamar, J.~Harb, P.~Abbeel, and I.~Mordatch, ``Multi-agent actor-critic for mixed cooperative-competitive environments,'' in \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2017.
+
+\bibitem{yu2022surprising}
+C.~Yu, A.~Velu, E.~Vinitsky, J.~Gao, Y.~Wang, A.~Bayen, and Y.~Wu, ``The surprising effectiveness of PPO in cooperative multi-agent games,'' in \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2022.
+
+\bibitem{schulman2017ppo}
+J.~Schulman, F.~Wolski, P.~Dhariwal, A.~Radford, and O.~Klimov, ``Proximal policy optimization algorithms,'' \textit{arXiv preprint arXiv:1707.06347}, 2017.
+
+\bibitem{treiber2000idm}
+M.~Treiber, A.~Hennecke, and D.~Helbing, ``Congested traffic states in empirical observations and microscopic simulations,'' \textit{Physical Review E}, vol.~62, no.~2, pp.~1805--1824, 2000.
+
+\bibitem{berrebi2015speed}
+S.~J. Berrebi, E.~Hans, N.~Chiabaut, J.~A. Laval, L.~Leclercq, and K.~E. Watkins, ``Comparing bus holding methods with and without real-time predictions,'' \textit{Transportation Research Part C}, vol.~87, pp.~197--211, 2018.
+
+\bibitem{delgado2012speed}
+F.~Delgado, J.~C. Mu\~noz, and R.~Giesen, ``How much can holding and/or limiting boarding improve transit performance?,'' \textit{Transportation Research Part B}, vol.~46, no.~9, pp.~1202--1217, 2012.
+
+\bibitem{makoviychuk2021isaac}
+V.~Makoviychuk et al., ``Isaac Gym: High performance GPU-based physics simulation for robot learning,'' in \textit{NeurIPS Datasets and Benchmarks}, 2021.
+
+\end{thebibliography}
+
+\end{document}

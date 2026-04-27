@@ -12,7 +12,10 @@ import os
 from dataclasses import dataclass, field
 from typing import List
 
-from .config import Direction
+try:
+    from .config import Direction
+except ImportError:
+    from config import Direction
 
 
 @dataclass
@@ -231,6 +234,9 @@ def load_route(direction: Direction = "gidis", max_stops: int = 0) -> LinearRout
                     matched += 1
                     break
 
+    # Platform giriş noktalarına hizala (dashboard ile tutarlılık)
+    _align_stops_to_platform_entries(route, direction)
+
     # Rota kisaltma
     if max_stops > 0 and max_stops < len(route.stops):
         route.stops = route.stops[:max_stops]
@@ -239,6 +245,7 @@ def load_route(direction: Direction = "gidis", max_stops: int = 0) -> LinearRout
             s.index = i
 
     return route
+
 
 
 def _load_from_cache(
@@ -264,6 +271,9 @@ def _load_from_cache(
         direction=direction,
     )
 
+    # Platform giriş noktalarına hizala (dashboard ile tutarlılık)
+    _align_stops_to_platform_entries(route, direction)
+
     # Rota kisaltma
     if max_stops > 0 and max_stops < len(route.stops):
         route.stops = route.stops[:max_stops]
@@ -273,3 +283,94 @@ def _load_from_cache(
 
     return route
 
+
+# ── Platform giriş noktası hizalama ──────────────────────────────
+
+def _load_platform_entries() -> list[dict]:
+    """data/platform_entries.json'dan platform giriş koordinatlarını yükle."""
+    path = os.path.join(os.path.dirname(__file__), "data", "platform_entries.json")
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _align_stops_to_platform_entries(route: LinearRoute, direction: Direction) -> None:
+    """
+    Durak metre pozisyonlarını platform giriş noktasına kaydır.
+
+    Sorun: stop.meter_position, OSM stop_position node'undan
+    (genellikle peron ortası/sonu) geliyor. Dashboard ise araçları
+    platform giriş noktasında (gidiş=batı ucu) gösteriyor.
+
+    Çözüm: platform_entries.json'daki giriş koordinatlarını
+    lineer rota üzerine project edip stop.meter_position'ı güncelle.
+    """
+    entries = _load_platform_entries()
+    if not entries:
+        return
+
+    # Route segmentlerini yeniden oluştur (metre→latlng dönüşümü için lazım)
+    data_path = os.path.join(os.path.dirname(__file__), "data", "route_network.json")
+    with open(data_path, "r", encoding="utf-8") as f:
+        rn = json.load(f)
+
+    dir_key = "gidis" if direction == "gidis" else "donus"
+    edges = rn["edges"][dir_key]
+
+    segments: list[dict] = []
+    cum = 0.0
+    for edge in edges:
+        geom = edge["geometry"]
+        for pi in range(len(geom) - 1):
+            lat1, lng1 = geom[pi]
+            lat2, lng2 = geom[pi + 1]
+            dist = _haversine(lat1, lng1, lat2, lng2)
+            if dist < 0.1:
+                continue
+            segments.append({
+                "start_meter": cum,
+                "end_meter": cum + dist,
+                "start_lat": lat1, "start_lng": lng1,
+                "end_lat": lat2, "end_lng": lng2,
+                "length": dist,
+            })
+            cum += dist
+
+    # Platform HEAD koordinatları eşleştirmesi
+    # Gidiş araçları batıdan gelir → ilk araç peronun EN DOĞU UCUNDA durmalı = dönüş giriş noktası
+    # Dönüş araçları doğudan gelir → ilk araç peronun EN BATI UCUNDA durmalı = gidiş giriş noktası
+    # Yani: karşı yönün giriş noktası = bu yönün platform HEAD'i
+    opposite = "donus" if dir_key == "gidis" else "gidis"
+    lat_key = f"{opposite}_lat"
+    lon_key = f"{opposite}_lon"
+
+    entry_by_name: dict[str, tuple[float, float]] = {}
+    for e in entries:
+        if lat_key in e and lon_key in e:
+            entry_by_name[_normalize_name(e["name"])] = (e[lat_key], e[lon_key])
+
+    aligned = 0
+    for stop in route.stops:
+        stop_key = _normalize_name(stop.name)
+
+        # Tam eşleşme dene
+        entry_coord = entry_by_name.get(stop_key)
+
+        # Kısmi eşleşme dene
+        if entry_coord is None:
+            for ek, ev in entry_by_name.items():
+                if ek in stop_key or stop_key in ek:
+                    entry_coord = ev
+                    break
+
+        if entry_coord is None:
+            continue
+
+        # Platform giriş koordinatını lineer rotaya project et
+        new_meter = _find_closest_meter(segments, entry_coord[0], entry_coord[1])
+
+        # Makul aralıkta mı? (±200m'den fazla kayma olmamalı)
+        if abs(new_meter - stop.meter_position) < 200:
+            stop.meter_position = new_meter
+            aligned += 1

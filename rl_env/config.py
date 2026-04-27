@@ -10,8 +10,8 @@ from typing import Literal
 # Sabit zaman adımı (saniye) — RL eğitiminde kararlılık için
 DT: float = 0.1
 
-# Araç boyu (metre)
-VEHICLE_LENGTH: float = 15.0
+# Araç boyu (metre) — Mercedes-Benz Citaro metrobüs (TS vehicleType.lengthMeters ile senkron)
+VEHICLE_LENGTH: float = 20.0
 
 # Araç fazları
 VehiclePhase = Literal[

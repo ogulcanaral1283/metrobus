@@ -9,6 +9,7 @@ import type { RouteEdge, NetworkStop } from '../types/route-network';
 import type { LinearStop } from './sim-types';
 import { STATION_SLOTS } from '../constants/station-slots';
 import type { StationSlotInfo } from '../constants/station-slots';
+import { PLATFORM_ENTRIES } from '../constants/platform-entries';
 
 /** Haversine mesafe (metre) */
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -122,6 +123,35 @@ export function linearizeRoute(
 
     // Metre pozisyonuna göre sırala
     linearStops.sort((a, b) => a.meterPosition - b.meterPosition);
+
+    // ── Platform HEAD alignment ──────────────────────────────
+    // stop.meterPosition = peron HEAD'i (ilk aracın duracağı yer) olmalı.
+    // Gidiş: araçlar batıdan gelir → peron HEAD'i = en doğu ucu = dönüş giriş noktası
+    // Dönüş: araçlar doğudan gelir → peron HEAD'i = en batı ucu = gidiş giriş noktası
+    // Karşı yönün giriş koordinatını rota üzerine project ederek HEAD pozisyonunu buluyoruz.
+    const oppositeKey = direction === 'gidis' ? 'donus' : 'gidis';
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜ0-9]/g, '');
+
+    for (const stop of linearStops) {
+        const stopNorm = norm(stop.name);
+        // Platform entry bul (tam veya kısmi eşleşme)
+        const pe = PLATFORM_ENTRIES.find(e => {
+            const eNorm = norm(e.name);
+            return eNorm === stopNorm || eNorm.includes(stopNorm) || stopNorm.includes(eNorm);
+        });
+        if (!pe) continue;
+
+        const headLat = pe[`${oppositeKey}_lat` as keyof typeof pe] as number;
+        const headLon = pe[`${oppositeKey}_lon` as keyof typeof pe] as number;
+        if (!headLat || !headLon) continue;
+
+        const headMeter = findClosestMeter(segments, headLat, headLon);
+
+        // Makul aralıkta mı? (±300m kayma — platform uzunluğu kadar olabilir)
+        if (Math.abs(headMeter - stop.meterPosition) < 300) {
+            stop.meterPosition = headMeter;
+        }
+    }
 
     return {
         totalLength: cumulativeMeter,

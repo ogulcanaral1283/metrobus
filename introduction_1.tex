@@ -1,0 +1,84 @@
+\documentclass[a4paper,10pt,twocolumn]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage[margin=2cm]{geometry}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{authblk}
+\usepackage{abstract}
+\usepackage{enumitem}
+
+% Paragraflar arası boşluk
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+\setlength{\parindent}{0pt}
+
+% Başlık formatı
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+% Header
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Intelligent Metrob\"{u}s Fleet Management, 2026, 1--9}}
+\fancyhead[R]{\small\thepage}
+\fancyfoot[C]{}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ─── Başlık ───
+\title{\LARGE\textbf{Intelligent Metrob\"{u}s Fleet Management:\\
+A Comparative Study of Analytical and\\
+Reinforcement Learning Approaches}}
+
+% ─── Yazarlar ───
+\author[1]{O\u{g}ulcan Aral}
+\author[1]{Arif H\"{u}ddao\u{g}lu}
+\author[1]{Khaled Akidi}
+\affil[1]{Department of Computer Engineering, Istanbul, Turkey}
+
+\date{}
+
+\begin{document}
+\twocolumn[
+\maketitle
+\thispagestyle{fancy}
+
+\begin{onecolabstract}
+Istanbul's Metrob\"{u}s corridor serves over 1\,million daily passengers across 52\,km with 44 stations, yet suffers from severe bus bunching during peak hours---vehicles cluster together, causing platform overflow, cascading delays, and up to 300\% increases in passenger wait times. This paper presents a comparative study of two real-time fleet management approaches: a Multi-Agent Reinforcement Learning framework (MAPPO) and a deterministic analytical controller using PID headway regulation with slot lookahead optimization. Both methods are evaluated on a high-fidelity simulation environment modeling real-world route geometry, vehicle physics, and station operations.
+
+\medskip
+\noindent\textbf{Key words:} Multi-Agent Reinforcement Learning, Bus Bunching, Fleet Management, Intelligent Transportation Systems
+\end{onecolabstract}
+\vspace{1cm}
+]
+
+\section{Introduction}
+
+The Istanbul Metrob\"{u}s line has been operating since 2007 along a 52\,km dedicated corridor between Beylikd\"{u}z\"{u} and S\"{o}\u{g}\"{u}tl\"{u}\c{c}e\c{s}me, serving approximately 1\,million passengers daily and ranking among the world's busiest Bus Rapid Transit (BRT) systems. The line runs on an exclusive lane through the median of the highway, physically separated from general traffic by concrete barriers. While this closed-corridor design enables the metrob\"{u}s to function as an independent transit system, it also means that any disruption on the line propagates throughout the entire network.
+
+The system serves 44 stations and operates approximately 2,400 trips per day. During peak hours, headways drop to as low as 30\,seconds---a frequency comparable in operational intensity to many urban metro systems. Roughly 500 buses are actively deployed along the corridor, with 15--20 of them moving simultaneously on the line at any given time. The average end-to-end travel time ranges between 110 and 130\,minutes. Because the single-lane design does not allow buses to overtake one another, any slowdown in a single vehicle directly affects all following buses.
+
+Istanbul's rapidly growing population and increasing mobility demand are placing ever-greater strain on this system. The continuous rise in ridership leads to severe crowding at stations, prolonged waiting times, and extreme in-vehicle congestion. The consequences extend beyond passenger experience to the broader urban economy: millions of person-hours lost daily, reduced workforce productivity, energy waste, and escalating operational costs.
+
+The principal operational challenges of the current system are as follows:
+
+\paragraph{Platform queuing and the multiple-stop problem.}
+During peak hours---particularly the morning and evening commutes---buses accumulate involuntarily at stations due to high vehicle density and insufficient fleet management. Although station platforms are designed to accommodate parallel boarding and alighting operations, overcrowding forces excess buses to wait outside the platform area until space becomes available. This causes individual buses to stop multiple times at the same station, creating a cascading snowball effect that delays all following vehicles and amplifies disruptions along the entire corridor.
+
+\paragraph{Bus bunching.}
+Successive buses tend to cluster together, resulting in irregular headways and disproportionate passenger accumulation at certain stations.
+
+\paragraph{Excessive dwell times.}
+Passenger crowding and the multiple-stop problem cause buses to remain at stations far longer than scheduled, propagating delays along the full length of the line.
+
+\paragraph{Schedule deviations.}
+Variability in demand and operating conditions erodes schedule reliability, making timetable adherence increasingly difficult.
+
+Conventional fixed-schedule management approaches are inadequate for a system of this dynamism and stochasticity. The stochastic nature of passenger arrivals, variability in traffic conditions, and interdependencies among consecutive buses necessitate real-time, adaptive optimization strategies.
+
+In this study, we present a Multi-Agent Reinforcement Learning (MARL)-based optimization framework to improve the operational efficiency of the Istanbul Metrob\"{u}s system. The proposed approach models each bus as an autonomous agent capable of making real-time, data-driven decisions, with the objectives of minimizing system-wide passenger waiting times, reducing bus bunching, resolving the multiple-stop problem, and enhancing service reliability.
+
+\end{document}

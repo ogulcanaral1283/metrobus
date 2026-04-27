@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚍 Metrobüs Canlı Takip</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter','Segoe UI',sans-serif; background:#0a0e17; color:#e0e0e0; overflow:hidden; }
+  #map { position:absolute; top:0; left:0; right:0; bottom:0; z-index:1; }
+
+  /* Top Bar */
+  .top-bar {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%);
+    z-index:1000; display:flex; gap:12px; align-items:center;
+    background:rgba(10,14,23,0.92); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.08); border-radius:14px;
+    padding:10px 20px; box-shadow:0 8px 32px rgba(0,0,0,0.5);
+  }
+  .top-bar h1 { font-size:18px; font-weight:700; letter-spacing:-0.5px; }
+  .badge { background:linear-gradient(135deg,#f44336,#e91e63); color:#fff;
+    padding:3px 10px; border-radius:20px; font-size:10px; font-weight:700;
+    animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+  /* Stats Panel */
+  .stats-panel {
+    position:absolute; top:16px; right:16px; z-index:1000;
+    background:rgba(10,14,23,0.92); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.08); border-radius:14px;
+    padding:16px; min-width:200px; box-shadow:0 8px 32px rgba(0,0,0,0.5);
+  }
+  .stat-row { display:flex; justify-content:space-between; padding:4px 0;
+    font-size:13px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  .stat-row:last-child { border:none; }
+  .stat-val { font-weight:700; color:#fff; }
+
+  /* Refresh Button */
+  .refresh-btn {
+    position:absolute; bottom:24px; right:24px; z-index:1000;
+    background:linear-gradient(135deg,#1976D2,#42A5F5); border:none;
+    color:#fff; padding:14px 24px; border-radius:12px; font-size:14px;
+    font-weight:700; cursor:pointer; box-shadow:0 4px 20px rgba(25,118,210,0.4);
+    transition:all 0.2s;
+  }
+  .refresh-btn:hover { transform:translateY(-2px); box-shadow:0 6px 24px rgba(25,118,210,0.6); }
+  .refresh-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+
+  /* Quota bar */
+  .quota-bar {
+    position:absolute; bottom:24px; left:24px; z-index:1000;
+    background:rgba(10,14,23,0.92); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.08); border-radius:12px;
+    padding:12px 16px; font-size:11px; color:#aaa;
+  }
+  .quota-fill { height:4px; border-radius:2px; background:linear-gradient(90deg,#4CAF50,#FF9800,#F44336);
+    margin-top:6px; transition:width 0.3s; }
+
+  /* Hat filter */
+  .hat-filter {
+    position:absolute; top:80px; left:16px; z-index:1000;
+    background:rgba(10,14,23,0.92); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.08); border-radius:12px;
+    padding:10px 14px; font-size:11px;
+  }
+  .hat-chip {
+    display:inline-block; padding:3px 8px; margin:2px; border-radius:6px;
+    cursor:pointer; font-weight:600; font-size:11px; transition:all 0.15s;
+    border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05);
+  }
+  .hat-chip.active { background:rgba(33,150,243,0.3); border-color:#2196F3; color:#fff; }
+
+  /* Leaflet popup override */
+  .leaflet-popup-content-wrapper { background:rgba(20,25,40,0.95)!important; color:#e0e0e0!important;
+    border-radius:10px!important; border:1px solid rgba(255,255,255,0.1)!important; }
+  .leaflet-popup-tip { background:rgba(20,25,40,0.95)!important; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="top-bar">
+  <h1>🚍 Metrobüs Canlı Takip</h1>
+  <span class="badge">CANLI</span>
+  <span id="clock" style="font-size:13px;color:#aaa;font-variant-numeric:tabular-nums;"></span>
+</div>
+
+<div class="stats-panel">
+  <div style="font-weight:700;margin-bottom:8px;font-size:14px;">📊 Filo Durumu</div>
+  <div class="stat-row"><span>Toplam Otobüs</span><span class="stat-val" id="s-total">—</span></div>
+  <div class="stat-row"><span>Hat Sayısı</span><span class="stat-val" id="s-hats">—</span></div>
+  <div class="stat-row"><span>Son Güncelleme</span><span class="stat-val" id="s-time">—</span></div>
+  <div class="stat-row"><span>API Çağrısı</span><span class="stat-val" id="s-calls">—</span></div>
+  <div class="stat-row"><span>Kaynak</span><span class="stat-val" id="s-cached" style="font-size:11px;">—</span></div>
+  <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:8px 0;">
+  <div id="hat-breakdown" style="font-size:11px;"></div>
+</div>
+
+<div class="hat-filter">
+  <div style="font-weight:600;margin-bottom:6px;">🎯 Hat Filtresi</div>
+  <div id="hat-chips"></div>
+</div>
+
+<div class="quota-bar">
+  <div>📡 API Kotası: <b id="q-used">0</b>/~14 yenileme</div>
+  <div class="quota-fill" id="q-bar" style="width:0%;"></div>
+</div>
+
+<div class="refresh-controls" style="position:absolute;bottom:24px;right:24px;z-index:1000;display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <label style="font-size:11px;color:#aaa;cursor:pointer;display:flex;align-items:center;gap:6px;
+      background:rgba(10,14,23,0.92);backdrop-filter:blur(12px);padding:6px 12px;border-radius:8px;
+      border:1px solid rgba(255,255,255,0.08);">
+      Otomatik
+      <input type="checkbox" id="autoToggle" checked
+        style="accent-color:#4CAF50;width:16px;height:16px;cursor:pointer;">
+    </label>
+    <select id="intervalSelect" style="background:rgba(10,14,23,0.92);color:#fff;border:1px solid rgba(255,255,255,0.15);
+      border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer;backdrop-filter:blur(12px);">
+      <option value="2" selected>2s</option>
+      <option value="5">5s</option>
+      <option value="10">10s</option>
+      <option value="30">30s</option>
+    </select>
+  </div>
+  <button class="refresh-btn" id="refreshBtn" onclick="fetchBuses()">
+    <span id="btnText">🔄 Yenile</span>
+    <span id="countdown" style="margin-left:8px;font-size:12px;opacity:0.8;font-variant-numeric:tabular-nums;"></span>
+  </button>
+</div>
+
+<script>
+const HAT_COLORS = {
+  '34':'#E91E63','34A':'#9C27B0','34AS':'#2196F3',
+  '34BZ':'#FF9800','34C':'#4CAF50','34G':'#00BCD4','34Z':'#FF5722'
+};
+const YON_ARROWS = {'gidis':'→','donus':'←'};
+
+let map, busMarkers = [], stationMarkers = [];
+let allBuses = [];
+let activeHats = new Set(Object.keys(HAT_COLORS));
+let autoRefreshTimer = null;
+
+// Init map
+map = L.map('map', {
+  center: [41.02, 28.82],
+  zoom: 12,
+  zoomControl: false,
+  attributionControl: false,
+});
+
+L.control.zoom({ position:'bottomright' }).addTo(map);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OSM | CARTO',
+}).addTo(map);
+
+// Clock
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('tr-TR');
+}, 1000);
+
+// Load real road geometry + stations
+Promise.all([
+  fetch('/api/route-geometry').then(r=>r.json()),
+  fetch('/api/duraklar').then(r=>r.json()),
+]).then(([geo, stations]) => {
+  // Gidiş hattı — gerçek yol geometrisi (mavi)
+  L.polyline(geo.gidis, {
+    color:'#42A5F5', weight:4, opacity:0.85,
+    lineCap:'round', lineJoin:'round',
+  }).bindPopup('<b>→ Gidiş Yönü</b><br>Beylikdüzü → Söğütlüçeşme').addTo(map);
+
+  // Dönüş hattı — gerçek yol geometrisi (turuncu)
+  L.polyline(geo.donus, {
+    color:'#FFA726', weight:4, opacity:0.85,
+    lineCap:'round', lineJoin:'round',
+  }).bindPopup('<b>← Dönüş Yönü</b><br>Söğütlüçeşme → Beylikdüzü').addTo(map);
+
+  // Durak noktaları
+  stations.forEach((s, i) => {
+    L.circleMarker([s.gidis_lat, s.gidis_lon], {
+      radius:4, color:'#42A5F5', fillColor:'#42A5F5', fillOpacity:0.9, weight:1.5,
+    }).bindPopup(`<b>${i+1}. ${s.name}</b><br><span style="color:#42A5F5">→ Gidiş</span>`).addTo(map);
+
+    L.circleMarker([s.donus_lat, s.donus_lon], {
+      radius:4, color:'#FFA726', fillColor:'#FFA726', fillOpacity:0.9, weight:1.5,
+    }).bindPopup(`<b>${i+1}. ${s.name}</b><br><span style="color:#FFA726">← Dönüş</span>`).addTo(map);
+  });
+
+  // Haritayı güzergaha sığdır
+  map.fitBounds(L.latLngBounds(geo.gidis).pad(0.05));
+});
+
+function makeBusIcon(bus) {
+  const hat = bus.hatkodu || '34';
+  const color = HAT_COLORS[hat] || '#2196F3';
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      box-shadow:0 0 8px ${color}88, 0 2px 6px rgba(0,0,0,0.5);
+      transition:all 0.3s;
+    "></div>`,
+    iconSize:[14,14], iconAnchor:[7,7],
+  });
+}
+
+function renderBuses() {
+  busMarkers.forEach(m => map.removeLayer(m));
+  busMarkers = [];
+
+  const filtered = allBuses.filter(b => activeHats.has(b.hatkodu));
+
+  filtered.forEach(bus => {
+    const lat = parseFloat(bus.enlem);
+    const lon = parseFloat(bus.boylam);
+    if (!lat || !lon) return;
+
+    const hat = bus.hatkodu || '?';
+    const color = HAT_COLORS[hat] || '#2196F3';
+    const m = L.marker([lat, lon], { icon: makeBusIcon(bus) });
+
+    m.bindPopup(`
+      <div style="font-family:Inter,sans-serif;min-width:180px;line-height:1.6;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <b style="font-size:14px;">🚍 ${bus.kapino}</b>
+          <span style="background:${color};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">${hat}</span>
+        </div>
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0;">
+        <div style="font-size:12px;">
+          <div>📍 Yön: <b>${bus.yon || '?'}</b></div>
+          <div>🗺️ Güzergah: <b style="font-size:10px;">${bus.hatad || '?'}</b></div>
+          <div>🕐 Güncelleme: <b>${bus.son_konum_zamani || '?'}</b></div>
+          <div style="margin-top:4px;font-size:10px;color:#888;">
+            ${lat.toFixed(5)}, ${lon.toFixed(5)}
+          </div>
+        </div>
+      </div>
+    `);
+
+    m.addTo(map);
+    busMarkers.push(m);
+  });
+}
+
+function updateStats(data) {
+  document.getElementById('s-total').textContent = data.count;
+  document.getElementById('s-calls').textContent = data.api_calls * 7;
+  document.getElementById('s-cached').textContent = data.cached ? '📦 Cache' : '🌐 Taze';
+  document.getElementById('s-time').textContent = new Date(data.timestamp * 1000).toLocaleTimeString('tr-TR');
+
+  // Hat breakdown
+  const hatCounts = {};
+  data.buses.forEach(b => {
+    const h = b.hatkodu || '?';
+    hatCounts[h] = (hatCounts[h]||0) + 1;
+  });
+  document.getElementById('s-hats').textContent = Object.keys(hatCounts).length;
+
+  let html = '';
+  Object.entries(hatCounts).sort((a,b)=>b[1]-a[1]).forEach(([hat,cnt]) => {
+    const c = HAT_COLORS[hat]||'#888';
+    html += `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+      <span style="color:${c};font-weight:600;">${hat}</span>
+      <span style="color:#fff;font-weight:700;">${cnt}</span>
+    </div>`;
+  });
+  document.getElementById('hat-breakdown').innerHTML = html;
+
+  // Quota
+  const used = data.api_calls;
+  document.getElementById('q-used').textContent = used;
+  document.getElementById('q-bar').style.width = Math.min(100, (used/14)*100) + '%';
+
+  // Hat chips
+  const chips = document.getElementById('hat-chips');
+  chips.innerHTML = '';
+  Object.keys(HAT_COLORS).forEach(hat => {
+    const cnt = hatCounts[hat] || 0;
+    const chip = document.createElement('span');
+    chip.className = 'hat-chip' + (activeHats.has(hat) ? ' active' : '');
+    chip.textContent = `${hat} (${cnt})`;
+    chip.style.color = HAT_COLORS[hat];
+    chip.onclick = () => {
+      if (activeHats.has(hat)) activeHats.delete(hat); else activeHats.add(hat);
+      chip.classList.toggle('active');
+      renderBuses();
+    };
+    chips.appendChild(chip);
+  });
+}
+
+async function fetchBuses() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  document.getElementById('btnText').textContent = '⏳ Çekiliyor...';
+  document.getElementById('countdown').textContent = '';
+
+  try {
+    const resp = await fetch('/api/filo');
+    const data = await resp.json();
+    allBuses = data.buses;
+    renderBuses();
+    updateStats(data);
+  } catch(e) {
+    console.error('Fetch error:', e);
+  }
+
+  btn.disabled = false;
+  document.getElementById('btnText').textContent = '🔄 Yenile';
+  resetCountdown();
+}
+
+// === Auto-refresh with countdown ===
+let countdownSec = 0;
+let countdownTimer = null;
+
+function getInterval() {
+  return parseInt(document.getElementById('intervalSelect').value) || 45;
+}
+
+function resetCountdown() {
+  clearInterval(countdownTimer);
+  const autoOn = document.getElementById('autoToggle').checked;
+  if (!autoOn) {
+    document.getElementById('countdown').textContent = '';
+    return;
+  }
+  countdownSec = getInterval();
+  document.getElementById('countdown').textContent = `(${countdownSec}s)`;
+  countdownTimer = setInterval(() => {
+    countdownSec--;
+    document.getElementById('countdown').textContent = `(${countdownSec}s)`;
+    if (countdownSec <= 0) {
+      clearInterval(countdownTimer);
+      fetchBuses();
+    }
+  }, 1000);
+}
+
+document.getElementById('autoToggle').addEventListener('change', () => {
+  resetCountdown();
+});
+document.getElementById('intervalSelect').addEventListener('change', () => {
+  resetCountdown();
+});
+
+// İlk yükleme
+fetchBuses();
+</script>
+</body>
+</html>

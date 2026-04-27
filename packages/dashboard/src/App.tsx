@@ -127,7 +127,7 @@ function vehicleIcon(vehicle: SimVehicle) {
     const warning = v.bunchingWarning;
     const predictive = v.predictiveDecision;
 
-    // Pulse class önceliği: predictive > bunching
+    // Pulse class önceliği: sadece predictive engine göstergeleri
     let pulseClass = '';
     let border = '#fff';
     if (predictive?.decision === 'SPEED_FILTER') {
@@ -136,14 +136,6 @@ function vehicleIcon(vehicle: SimVehicle) {
     } else if (predictive?.decision === 'BUNCHING_ACCEPT') {
         pulseClass = 'bunch-accept-pulse';
         border = '#FF5722';  // Turuncu-kırmızı
-    } else if (warning === 'critical') {
-        pulseClass = 'bunch-pulse';
-        border = '#F44336';
-    } else if (warning === 'warning') {
-        pulseClass = 'bunch-pulse-warn';
-        border = isBunched ? '#F44336' : '#fff';
-    } else if (isBunched) {
-        border = '#F44336';
     }
 
     // Araç boyutları (harita üzerinde piksel)
@@ -169,7 +161,7 @@ function vehicleIcon(vehicle: SimVehicle) {
 
     return L.divIcon({
         className: '',
-        html: `<div style="
+        html: `<div class="vehicle-marker-root ${pulseClass}" data-vid="${vehicle.id}" data-vdir="${vehicle.direction}" style="
             width:${hitW}px;height:${hitH}px;
             transform:rotate(${rot}deg);
             transform-origin:center center;
@@ -262,7 +254,7 @@ function getPhaseDetail(vehicle: SimVehicle): string {
 // ==========================================
 // HAREKET EDEN MARKER — imperative Leaflet güncelleme
 // ==========================================
-const VehicleMarker: React.FC<{ vehicle: SimVehicle; onClick: () => void }> = ({ vehicle, onClick }) => {
+const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = ({ vehicle }) => {
     const markerRef = useRef<L.Marker | null>(null);
 
     useEffect(() => {
@@ -278,7 +270,7 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle; onClick: () => void }> = ({
             ref={markerRef}
             position={[vehicle.latitude, vehicle.longitude]}
             icon={vehicleIcon(vehicle)}
-            eventHandlers={{ click: onClick }}
+            eventHandlers={{}}
         >
             <Popup>
                 <div style={{ fontFamily: 'Inter,sans-serif', minWidth: '220px', lineHeight: '1.6' }}>
@@ -363,6 +355,17 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle; onClick: () => void }> = ({
 };
 
 // ==========================================
+// MAP CONTROLLER — harita referansını yakala
+// ==========================================
+const MapController: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> = ({ mapRef }) => {
+    const map = useMap();
+    React.useEffect(() => {
+        mapRef.current = map;
+    }, [map, mapRef]);
+    return null;
+};
+
+// ==========================================
 // ANA UYGULAMA
 // ==========================================
 
@@ -375,12 +378,32 @@ const App: React.FC = () => {
     const [isPaused, setIsPaused] = useState(false);
     const [timeScale, setTimeScale] = useState(5);
     const [mapTile, setMapTile] = useState<MapTileMode>('dark');
+    const mapInstanceRef = useRef<L.Map | null>(null);
 
     // === TRAINING MODE ===
     const [trainingMode, setTrainingMode] = useState(false);
     const [trainingData, setTrainingData] = useState<any>(null);
     const [wsConnected, setWsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
+
+    // Bunching pair'e tıklayınca haritayı o bölgeye fly et
+    const flyToBunchingPair = useCallback((pair: any) => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        // Training modda araçlar trainingData'dan, normal modda simState'den
+        const allVehicles = trainingData?.vehicles ?? [
+            ...(simState.gidis?.vehicles ?? []),
+            ...(simState.donus?.vehicles ?? []),
+        ];
+        const v1 = allVehicles.find((v: any) => v.id === pair.id1);
+        const v2 = allVehicles.find((v: any) => v.id === pair.id2);
+        if (!v1 || !v2) return;
+        const bounds = L.latLngBounds(
+            [v1.latitude, v1.longitude],
+            [v2.latitude, v2.longitude],
+        );
+        map.flyToBounds(bounds.pad(0.5), { maxZoom: 17, duration: 0.8 });
+    }, [trainingData, simState]);
 
     // Çift yönlü engine init
     useEffect(() => {
@@ -502,6 +525,23 @@ const App: React.FC = () => {
         } else {
             setSelectedVehicleKey(null);
         }
+    }, []);
+
+    // DOM Event Delegation — harita marker tıklamalarını yakala
+    // React-Leaflet event sorunlarından tamamen bağımsız
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            const target = (e.target as HTMLElement).closest('.vehicle-marker-root') as HTMLElement;
+            if (target) {
+                const vid = Number(target.dataset.vid);
+                const vdir = target.dataset.vdir || '';
+                if (!isNaN(vid)) {
+                    setSelectedVehicleKey({ id: vid, direction: vdir });
+                }
+            }
+        };
+        document.addEventListener('click', handler);
+        return () => document.removeEventListener('click', handler);
     }, []);
 
     // Per-vehicle komutlar
@@ -628,18 +668,36 @@ const App: React.FC = () => {
                         {/* Bunching çiftleri listesi */}
                         <div style={{ maxHeight: '120px', overflowY: 'auto', fontSize: '10px' }}>
                             {trainingData.bunchingPairs?.slice(0, 10).map((p: any, idx: number) => (
-                                <div key={idx} style={{
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                    padding: '3px 6px', borderRadius: '3px', marginBottom: '2px',
-                                    background: p.severity === 'critical' ? 'rgba(244,67,54,0.1)' : 'rgba(255,152,0,0.08)',
-                                }}>
-                                    <span style={{ color: '#ccc' }}>
-                                        🚍 M{String(p.id1).padStart(2, '0')} ↔ M{String(p.id2).padStart(2, '0')}
+                                <div key={idx}
+                                    onClick={() => flyToBunchingPair(p)}
+                                    style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '4px 8px', borderRadius: '4px', marginBottom: '2px',
+                                        background: p.severity === 'critical' ? 'rgba(244,67,54,0.1)' : 'rgba(255,152,0,0.08)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                        border: '1px solid transparent',
+                                    }}
+                                    onMouseEnter={e => {
+                                        (e.currentTarget as HTMLDivElement).style.background = p.severity === 'critical' ? 'rgba(244,67,54,0.25)' : 'rgba(255,152,0,0.2)';
+                                        (e.currentTarget as HTMLDivElement).style.borderColor = p.severity === 'critical' ? '#F44336' : '#FF9800';
+                                    }}
+                                    onMouseLeave={e => {
+                                        (e.currentTarget as HTMLDivElement).style.background = p.severity === 'critical' ? 'rgba(244,67,54,0.1)' : 'rgba(255,152,0,0.08)';
+                                        (e.currentTarget as HTMLDivElement).style.borderColor = 'transparent';
+                                    }}
+                                >
+                                    <span style={{ color: '#ccc', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ fontSize: '13px' }}>🚍</span>
+                                        M{String(p.id1).padStart(2, '0')} ↔ M{String(p.id2).padStart(2, '0')}
                                     </span>
-                                    <span style={{
-                                        color: p.severity === 'critical' ? '#F44336' : '#FF9800',
-                                        fontWeight: 700,
-                                    }}>{p.gap}m</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{
+                                            color: p.severity === 'critical' ? '#F44336' : '#FF9800',
+                                            fontWeight: 700,
+                                        }}>{p.gap}m</span>
+                                        <span style={{ color: '#666', fontSize: '10px' }}>📍</span>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -764,6 +822,7 @@ const App: React.FC = () => {
                     style={{ width: '100%', height: '100%' }}
                     zoomControl={false}
                 >
+                    <MapController mapRef={mapInstanceRef} />
                     <TileLayer
                         key={mapTile}
                         attribution={MAP_TILES[mapTile].attribution}
@@ -910,7 +969,7 @@ const App: React.FC = () => {
 
                     {/* Araç işaretçileri — pozisyon imperatively güncellenir */}
                     {vehicles.map(v => (
-                        <VehicleMarker key={`${v.direction}-${v.id}`} vehicle={v} onClick={() => selectVehicle(v)} />
+                        <VehicleMarker key={`${v.direction}-${v.id}`} vehicle={v} />
                     ))}
 
                     {/* Bunching çizgileri — bunched araç çiftleri arası kırmızı/turuncu kesikli çizgi */}

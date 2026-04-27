@@ -22,16 +22,28 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from .config import DEFAULT_CONFIG, DT, SimConfig, SimVehicle, TrafficZone
-from .demand import DEFAULT_DEMAND, DemandProfile
-from .physics import compute_target_speed, update_vehicle_physics
-from .route_data import LinearRoute, load_route
-from .station_fsm import update_station_fsm, compute_max_buses_at_stop
-from .traffic import check_rush_hour, update_traffic_zones
-from .predictive_engine import (
-    BusSnapshot, StopInfo, Decision, PredictiveDecision,
-    evaluate_all_buses,
-)
+try:
+    from .config import DEFAULT_CONFIG, DT, SimConfig, SimVehicle, TrafficZone
+    from .demand import DEFAULT_DEMAND, DemandProfile
+    from .physics import compute_target_speed, update_vehicle_physics
+    from .route_data import LinearRoute, load_route
+    from .station_fsm import update_station_fsm, compute_max_buses_at_stop
+    from .traffic import check_rush_hour, update_traffic_zones
+    from .predictive_engine import (
+        BusSnapshot, StopInfo, Decision, PredictiveDecision,
+        evaluate_all_buses,
+    )
+except ImportError:
+    from config import DEFAULT_CONFIG, DT, SimConfig, SimVehicle, TrafficZone
+    from demand import DEFAULT_DEMAND, DemandProfile
+    from physics import compute_target_speed, update_vehicle_physics
+    from route_data import LinearRoute, load_route
+    from station_fsm import update_station_fsm, compute_max_buses_at_stop
+    from traffic import check_rush_hour, update_traffic_zones
+    from predictive_engine import (
+        BusSnapshot, StopInfo, Decision, PredictiveDecision,
+        evaluate_all_buses,
+    )
 
 
 # Observation boyutu per-agent

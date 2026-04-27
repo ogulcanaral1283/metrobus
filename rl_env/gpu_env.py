@@ -13,13 +13,22 @@ from typing import Any, Optional, Tuple
 import numpy as np
 import torch
 
-from .config import DEFAULT_CONFIG, DT, SimConfig
-from .route_data import LinearRoute, LinearStop, load_route
-from .station_fsm import compute_max_buses_at_stop
-from .predictive_engine import (
-    BusSnapshot, StopInfo, Decision, PredictiveDecision,
-    evaluate_all_buses,
-)
+try:
+    from .config import DEFAULT_CONFIG, DT, SimConfig
+    from .route_data import LinearRoute, LinearStop, load_route
+    from .station_fsm import compute_max_buses_at_stop
+    from .predictive_engine import (
+        BusSnapshot, StopInfo, Decision, PredictiveDecision,
+        evaluate_all_buses,
+    )
+except ImportError:
+    from config import DEFAULT_CONFIG, DT, SimConfig
+    from route_data import LinearRoute, LinearStop, load_route
+    from station_fsm import compute_max_buses_at_stop
+    from predictive_engine import (
+        BusSnapshot, StopInfo, Decision, PredictiveDecision,
+        evaluate_all_buses,
+    )
 
 # =============================================
 # Sabitler
@@ -34,15 +43,15 @@ ACTION_HOLD = 3
 SPEED_FACTOR_MAP = torch.tensor([0.6, 1.0, 1.2, 1.0])
 
 HOLD_DURATION_SECONDS = 15.0
-VEHICLE_LENGTH = 15.0
+VEHICLE_LENGTH = 20.0  # TS VEHICLE_TYPES ile senkron (Mercedes-Benz Citaro)
 
 # Reward parametreleri
-W_HEADWAY = 1.0
-W_BUNCHING = 0.5
+W_HEADWAY = 2.0              # Ana sinyal — headway düzeni
+W_BUNCHING = 0.3             # Yapışma cezası (düşürüldü — çok baskındı)
 W_DWELL = 0.1
 W_SPEED = 0.3
-BUNCHING_CRITICAL_M = 100.0
-BUNCHING_WARNING_M = 200.0
+BUNCHING_CRITICAL_M = 50.0   # 50m altı = kritik  (eskiden 100m)
+BUNCHING_WARNING_M = 100.0   # 100m altı = uyarı  (eskiden 200m — 200 araçta her çift uyarıydı)
 TARGET_SPEED_MS = 40.0 / 3.6
 MAX_EPISODE_TIME = 7200.0
 LONG_DWELL_THRESHOLD = 90.0
@@ -76,6 +85,7 @@ class GpuMetrobusEnv:
         max_episode_time: float = MAX_EPISODE_TIME,
         max_stops: int = 0,
         num_envs: int = 32,
+        reward_config: Optional[dict] = None,
     ):
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.N = vehicle_count
@@ -85,6 +95,14 @@ class GpuMetrobusEnv:
         self.config.vehicle_count = vehicle_count
         self.max_episode_time = max_episode_time
         self.dt = DT
+
+        # Reward parametreleri (config'den okunur, varsayilan modül sabitleri)
+        rc = reward_config or {}
+        self._w_headway = rc.get("headway_weight", W_HEADWAY)
+        self._w_bunching = abs(rc.get("bunching_penalty", W_BUNCHING))  # negatifse pozitife cevir
+        self._w_dwell = abs(rc.get("dwell_penalty", W_DWELL))
+        self._w_speed = rc.get("speed_weight", W_SPEED)
+        self._target_speed_ms = rc.get("target_speed_kmh", 40.0) / 3.6
 
         # Rota yukle
         self.route: LinearRoute = load_route(direction, max_stops=max_stops)
@@ -150,6 +168,14 @@ class GpuMetrobusEnv:
         self._0_08 = torch.tensor(0.08, device=dev)
         self._0_05 = torch.tensor(0.05, device=dev)
         self._NUM_STOPS_L = torch.tensor(self.num_stops, device=dev)
+        self._A_MAX_T = torch.tensor(self._a_max, device=dev)  # departing ivme
+        self._30_0 = torch.tensor(30.0, device=dev)
+        self._10_0 = torch.tensor(10.0, device=dev)
+        self._3_0_t = torch.tensor(3.0, device=dev)
+        self._20_0 = torch.tensor(20.0, device=dev)
+
+        # Pre-allocated buffers for CUDA Graph compat (yeni tensor yaratma yok)
+        self._target_speed_buf = torch.empty(0, device=dev)  # reset'te boyutlanır
 
         # State tensörleri (B, N) — reset'te oluşturulur
         self.positions: torch.Tensor = None  # type: ignore
@@ -218,6 +244,9 @@ class GpuMetrobusEnv:
         self.queue_wait_time = torch.zeros(B, N, device=dev)
         self.holding_extra = torch.zeros(B, N, device=dev)
         self.speed_factor = torch.ones(B, N, device=dev)
+
+        # Pre-allocated buffers boyutla
+        self._target_speed_buf = torch.full((B, N), self._default_speed_limit, device=dev)
 
         obs = self._vectorized_obs()
         return obs, {}
@@ -379,10 +408,11 @@ class GpuMetrobusEnv:
         dist_to_stop = self.stop_positions[safe_nsi] - self.positions  # (B, N)
         at_end = self.next_stop_idx >= S  # (B, N)
 
-        # Platform zone kontrolü
+        # Platform zone kontrolü — TS isInsidePlatformZone ile senkron
+        # Peron alanı = [stop.meterPosition - platformLengthMeters, stop.meterPosition + 15]
         platform_len = self.stop_platform_lengths[safe_nsi]  # (B, N)
         platform_start = self.stop_positions[safe_nsi] - platform_len  # (B, N)
-        platform_end = self.stop_positions[safe_nsi] + 15.0  # (B, N)
+        platform_end = self.stop_positions[safe_nsi] + 15.0  # (B, N) — TS: +15m tolerans
         vehicle_rear = self.positions - VEHICLE_LENGTH  # (B, N)
         in_zone = (self.positions <= platform_end) & (vehicle_rear >= platform_start - 2.0) & ~at_end  # (B, N)
 
@@ -403,12 +433,30 @@ class GpuMetrobusEnv:
         approaching = self.phases == APPROACHING
         slow_enough = self.speeds < 2.0  # IDM keeps vehicles creeping — 2 m/s threshold
 
+        # ═══ PARALEL PERON OPERASYONU ═══
         # Peron alanı içinde + durmuş → STOPPED (ANINDA dwell başlat)
+        # TS mantığı: Araç peron alanına girip durduğu anda yolcu operasyonu başlar
+        # Birden fazla araç AYNI ANDA kapı açık olabilir (paralel)
         enter_stopped_zone = approaching & in_zone & slow_enough & ~at_end
-        # Fallback: zone dışında ama durağa yakın + yavaş (eski davranış uyumluluğu)
-        near_stop = (dist_to_stop > 0) & (dist_to_stop < self._approach_dist)
-        enter_stopped_fallback = approaching & slow_enough & near_stop & ~at_end
+        # Fallback: zone dışında ama durağa son 15m + yavaş (overshoot koruması)
+        very_near_stop = (dist_to_stop > -5) & (dist_to_stop < 15)
+        enter_stopped_fallback = approaching & slow_enough & very_near_stop & ~at_end & ~in_zone
         enter_stopped_any = enter_stopped_zone | enter_stopped_fallback
+
+        # Paralel peron: Perondaki araç sayısını kontrol et
+        # Kapasite aşıldıysa → QUEUED (peron DOLU)
+        on_platform = (self.phases == STOPPED) | (self.phases == DOORS_CLOSED) | (self.phases == BLOCKED) | (self.phases == DOCKING)  # (B, N)
+        # Aynı durakta peronda kaç araç var? (B, N) → her araç kendi durağı için
+        same_stop_matrix = safe_nsi.unsqueeze(2) == safe_nsi.unsqueeze(1)  # (B, N, N)
+        on_plat_expanded = on_platform.unsqueeze(1).expand(B, N, N)  # (B, N, N)
+        not_self_mask = self._FIFO_EYE.unsqueeze(0)  # (1, N, N)
+        platform_count = (same_stop_matrix & on_plat_expanded & not_self_mask).sum(dim=2)  # (B, N)
+        max_buses = self.stop_max_buses[safe_nsi]  # (B, N)
+        platform_has_space = platform_count < max_buses  # (B, N)
+
+        # TS fitsInPlatform: enter_stopped sadece kapasitede yer varsa
+        can_enter = enter_stopped_any & platform_has_space
+        must_queue = enter_stopped_any & ~platform_has_space
 
         # Dwell süresi — branchless (her zaman hesaplanır, mask ile uygulanır)
         base_dwell = 15.0 + torch.rand(B, N, device=dev) * 10.0
@@ -421,20 +469,46 @@ class GpuMetrobusEnv:
         dwell = torch.clamp(base_dwell + engelli + bebek + crowd + kart, 15.0, 30.0)
         dwell = 1.0 + dwell + self.holding_extra  # 1s kapı açılma
 
-        self.dwell_remaining.copy_(torch.where(enter_stopped_any, dwell, self.dwell_remaining))
-        self.holding_extra.copy_(torch.where(enter_stopped_any, self._ZERO_F, self.holding_extra))
-        self.phases.copy_(torch.where(enter_stopped_any, self._STOPPED_T, self.phases))
-        self.speeds.copy_(torch.where(enter_stopped_any, self._ZERO_F, self.speeds))
-        self.accelerations.copy_(torch.where(enter_stopped_any, self._ZERO_F, self.accelerations))
-        self.is_queuing.copy_(torch.where(enter_stopped_any, self._FALSE, self.is_queuing))
-        # Pozisyonu durak noktasına snap et — dashboard'da doğru görünsün
-        snap_pos = self.stop_positions[safe_nsi]  # (B, N) — durağın metre pozisyonu
-        self.positions.copy_(torch.where(enter_stopped_any, snap_pos, self.positions))
+        # Kapasitede yer var → STOPPED (paralel dwell)
+        self.dwell_remaining.copy_(torch.where(can_enter, dwell, self.dwell_remaining))
+        self.holding_extra.copy_(torch.where(can_enter, self._ZERO_F, self.holding_extra))
+        self.phases.copy_(torch.where(can_enter, self._STOPPED_T, self.phases))
+        self.speeds.copy_(torch.where(can_enter, self._ZERO_F, self.speeds))
+        self.accelerations.copy_(torch.where(can_enter, self._ZERO_F, self.accelerations))
+        self.is_queuing.copy_(torch.where(can_enter, self._FALSE, self.is_queuing))
+        # TS computeEntryPosition mantığı:
+        # - Peron BOŞ → ilk araç stop.meterPosition'a (peron başı) snap edilir
+        # - Peron DOLU (ama kapasite var) → araç mevcut pozisyonunda kalır (IDM arkada durdurmuştur)
+        platform_empty = platform_count == 0  # (B, N)
+        snap_pos = torch.where(can_enter & platform_empty, self.stop_positions[safe_nsi], self.positions)
+        self.positions.copy_(torch.where(can_enter, snap_pos, self.positions))
 
-        # Peron alanı içinde + hareket ediyor: önde araç varsa dur (early stop)
-        # Simplified: hala hareket ediyorsa fizik yavaşlatır, zone içinde sonunda durur
+        # Kapasite DOLU → QUEUED (peron girişinde bekleme)
+        self.phases.copy_(torch.where(must_queue, self._QUEUED_T, self.phases))
+        self.speeds.copy_(torch.where(must_queue, self._ZERO_F, self.speeds))
+        self.accelerations.copy_(torch.where(must_queue, self._ZERO_F, self.accelerations))
+        self.is_queuing.copy_(torch.where(must_queue, self._TRUE, self.is_queuing))
 
-        # Durak geçme: peron dışında + çok geçildi
+        # ═══ QUEUED → STOPPED (yer açıldığında perona gir) ═══
+        queued = self.phases == QUEUED
+        self.queue_wait_time.copy_(torch.where(queued, self.queue_wait_time + dt, self.queue_wait_time))
+        self.speeds.copy_(torch.where(queued, self._ZERO_F, self.speeds))
+        # Peronda yer açıldı mı? (güncel platform_count yeniden hesapla)
+        on_platform_now = (self.phases == STOPPED) | (self.phases == DOORS_CLOSED) | (self.phases == BLOCKED) | (self.phases == DOCKING)
+        same_stop_q = safe_nsi.unsqueeze(2) == safe_nsi.unsqueeze(1)
+        on_plat_q = on_platform_now.unsqueeze(1).expand(B, N, N)
+        plat_count_now = (same_stop_q & on_plat_q & not_self_mask).sum(dim=2)
+        queue_can_enter = queued & (plat_count_now < max_buses)
+        # Kuyruktaki araç için dwell hesapla
+        q_dwell = torch.clamp(15.0 + torch.rand(B, N, device=dev) * 15.0, 15.0, 30.0)
+        q_dwell = 1.0 + q_dwell + self.holding_extra
+        self.phases.copy_(torch.where(queue_can_enter, self._STOPPED_T, self.phases))
+        self.dwell_remaining.copy_(torch.where(queue_can_enter, q_dwell, self.dwell_remaining))
+        self.holding_extra.copy_(torch.where(queue_can_enter, self._ZERO_F, self.holding_extra))
+        self.is_queuing.copy_(torch.where(queue_can_enter, self._FALSE, self.is_queuing))
+        self.queue_wait_time.copy_(torch.where(queue_can_enter, self._ZERO_F, self.queue_wait_time))
+
+        # Durak geçme: peron dışında + çok geçildi (TS ile senkron)
         overshoot_limit = torch.clamp(platform_len * 0.5, min=5.0)  # (B, N)
         passed_stop = approaching & (dist_to_stop <= -overshoot_limit) & ~in_zone
         self.phases.copy_(torch.where(passed_stop, self._CRUISING_T, self.phases))
@@ -508,6 +582,8 @@ class GpuMetrobusEnv:
 
         # ═══ DEPARTING → CRUISING ═══
         departing = self.phases == DEPARTING
+        # TS ile senkron: kalkışta ivme ataması — araç ivmelensin
+        self.accelerations.copy_(torch.where(departing, self._A_MAX_T, self.accelerations))
         self.phases.copy_(torch.where(departing & (self.speeds > 3.0), self._CRUISING_T, self.phases))
 
     # ========================================
@@ -530,21 +606,36 @@ class GpuMetrobusEnv:
     # COMPUTE TARGET SPEED — (B, N)
     # ========================================
     def _compute_target_speed(self) -> torch.Tensor:
+        """TS physics.ts computeTargetSpeed ile senkron 4-aşamalı piecewise frenleme."""
         B, N, dev = self.B, self.N, self.device
 
-        target = torch.full((B, N), self._default_speed_limit, device=dev)
+        target = self._target_speed_buf.fill_(self._default_speed_limit)
         target = torch.clamp(target, max=self._max_speed)
 
         safe_nsi = torch.clamp(self.next_stop_idx, 0, self.num_stops - 1)
         at_end = self.next_stop_idx >= self.num_stops
         dist_to_stop = self.stop_positions[safe_nsi] - self.positions
 
-        in_approach = ~at_end & (dist_to_stop > 0) & (dist_to_stop < self._approach_dist)
-        braking_speed = torch.sqrt(2.0 * self._b_comfort * torch.clamp(dist_to_stop, min=0.1))
-        target = torch.where(in_approach, torch.minimum(target, braking_speed), target)
+        # Departing koruması: durağı yeni terk eden araçlara frenleme uygulanmaz
+        is_departing = self.phases == DEPARTING
+        in_approach = ~at_end & (dist_to_stop > 0) & (dist_to_stop < self._approach_dist) & ~is_departing
 
-        very_near = ~at_end & (dist_to_stop > 0) & (dist_to_stop < 5.0)
-        target = torch.where(very_near, self._ZERO_F, target)
+        # 4-aşamalı piecewise frenleme eğrisi (TS physics.ts ile birebir)
+        # Aşama 1: 150m-30m — kademeli yavaşlama
+        ratio_far = (dist_to_stop - 30.0) / (self._approach_dist - 30.0)
+        brake_far = 3.0 + ratio_far * (self._max_speed * 0.6 - 3.0)
+        # Aşama 2: 30m-10m — güçlü frenleme (3→1 m/s)
+        ratio_mid = (dist_to_stop - 10.0) / 20.0
+        brake_mid = 1.0 + ratio_mid * 2.0
+        # Aşama 3: 10m-3m — creep (1 m/s) — scalar broadcast
+        # Aşama 4: <3m — dur — scalar broadcast
+
+        # Piecewise seçim (CUDA Graph uyumlu — yeni tensor yaratma yok)
+        braking_target = torch.where(dist_to_stop > 30.0, brake_far,
+                         torch.where(dist_to_stop > 10.0, brake_mid,
+                         torch.where(dist_to_stop > 3.0, self._1_0, self._ZERO_F)))
+
+        target = torch.where(in_approach, torch.minimum(target, braking_target), target)
 
         # Hat sonu
         dist_to_end = self.route_length - self.positions
@@ -676,23 +767,23 @@ class GpuMetrobusEnv:
         headway_mean = headways.mean(dim=1)  # (B,)
         headway_std = headways.std(dim=1)  # (B,)
         cv = headway_std / headway_mean.clamp(min=0.01)  # (B,)
-        r_headway = torch.clamp(1.0 - cv, min=-1.0) * W_HEADWAY  # (B,)
+        r_headway = torch.clamp(1.0 - cv, min=-1.0) * self._w_headway  # (B,)
 
         # Bunching
         critical = (gaps < BUNCHING_CRITICAL_M).float().sum(dim=1)  # (B,)
         warning = ((gaps >= BUNCHING_CRITICAL_M) & (gaps < BUNCHING_WARNING_M)).float().sum(dim=1) * 0.5
         bunching_ratio = (critical + warning) / max(num_gaps, 1)
-        r_bunching = -bunching_ratio * W_BUNCHING  # (B,)
+        r_bunching = -bunching_ratio * self._w_bunching  # (B,)
 
         # Dwell
         stopped_like = (self.phases == STOPPED) | (self.phases == DOORS_CLOSED) | (self.phases == BLOCKED)
         long_dwell = (stopped_like & ~self.is_queuing & (self.dwell_remaining > LONG_DWELL_THRESHOLD)).float().sum(dim=1)
-        r_dwell = -(long_dwell / N) * W_DWELL  # (B,)
+        r_dwell = -(long_dwell / N) * self._w_dwell  # (B,)
 
         # Speed
         avg_spd = self.speeds.mean(dim=1)  # (B,)
-        speed_ratio = avg_spd / max(TARGET_SPEED_MS, 0.01)
-        r_speed = W_SPEED * torch.exp(-2.0 * (speed_ratio - 1.0) ** 2)  # (B,)
+        speed_ratio = avg_spd / max(self._target_speed_ms, 0.01)
+        r_speed = self._w_speed * torch.exp(-2.0 * (speed_ratio - 1.0) ** 2)  # (B,)
 
         return r_headway + r_bunching + r_dwell + r_speed  # (B,)
 
@@ -877,7 +968,7 @@ class GpuMetrobusEnv:
             self._graph_truncated.copy_(trunc)
 
         self._graph_captured = True
-        print("  CUDA Graph: capture BAŞARILI ✓")
+        print("  CUDA Graph: capture BASARILI ok")
 
     def graph_step(self, actions: torch.Tensor):
         """

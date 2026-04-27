@@ -10,7 +10,10 @@ from typing import Optional
 
 import numpy as np
 
-from .config import SimConfig, TrafficZone
+try:
+    from .config import SimConfig, TrafficZone
+except ImportError:
+    from config import SimConfig, TrafficZone
 
 
 def update_traffic_zones(

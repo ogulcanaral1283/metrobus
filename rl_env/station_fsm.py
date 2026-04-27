@@ -32,11 +32,15 @@ from typing import Optional
 
 import numpy as np
 
-from .config import SimConfig, SimVehicle, VEHICLE_LENGTH
-from .route_data import LinearStop
+try:
+    from .config import SimConfig, SimVehicle, VEHICLE_LENGTH
+    from .route_data import LinearStop
+except ImportError:
+    from config import SimConfig, SimVehicle, VEHICLE_LENGTH
+    from route_data import LinearStop
 
-# Istanbul metrobus araci uzunlugu (metre)
-BUS_LENGTH_METERS = 18.75
+# Istanbul metrobus araci uzunlugu (metre) — TS VEHICLE_TYPES ile senkron
+BUS_LENGTH_METERS = 20.0
 
 # Güvenli kalkış mesafesi (metre)
 SAFE_GAP = 0.5
@@ -66,10 +70,18 @@ def is_inside_platform_zone(
 
 
 def compute_max_buses_at_stop(stop: LinearStop) -> int:
-    """Platform uzunluguna gore duraga max kac otobus sigdigini hesapla."""
-    if stop.platform_length_meters <= 0:
-        return 1
-    return max(1, math.floor(stop.platform_length_meters / BUS_LENGTH_METERS))
+    """Platform kapasite: station_slots.json'daki slotCount değerini kullan.
+
+    Eski formül (platform_length / 18) gerçekçi değildi.
+    Yeni yaklaşım: Overpass API'deki stop_position node sayısına dayalı
+    slotCount değeri (TS station-slots.ts ile senkron).
+    """
+    if stop.slot_count > 0:
+        return stop.slot_count
+    # Fallback: platform uzunluğundan hesapla (25m/araç — 20m araç + 5m boşluk)
+    if stop.platform_length_meters > 0:
+        return max(2, math.floor(stop.platform_length_meters / 25))
+    return 1
 
 
 def get_vehicles_on_platform(
@@ -107,11 +119,11 @@ def fits_in_platform(
     vehicle_length: float,
     stop: LinearStop,
 ) -> bool:
-    """Aracın tamamı peron alanına sığıyor mu?"""
+    """Aracın tamamı peron alanına sığıyor mu? (TS fitsInPlatform ile senkron)"""
     vehicle_rear = stop_position - vehicle_length
     platform_start = stop.meter_position - stop.platform_length_meters
-    front_ok = stop_position <= stop.meter_position + 15
-    rear_ok = vehicle_rear >= platform_start - 2
+    front_ok = stop_position <= stop.meter_position + 2   # TS: +2m
+    rear_ok = vehicle_rear >= platform_start - 1           # TS: -1m
     return front_ok and rear_ok
 
 
@@ -410,6 +422,7 @@ def update_station_fsm(
     # DEPARTING — Kalkış ivmelenmesi
     # ============================================
     elif vehicle.phase == "departing":
+        vehicle.acceleration = config.max_acceleration  # TS ile senkron: kalkışta ivme ata
         if vehicle.speed > 3.0:
             vehicle.phase = "cruising"
 

@@ -1,14 +1,14 @@
 # ============================================
 # Metrobus MAPPO Egitim Hiperparametreleri
-# Kisa Segment Curriculum — Phase 1
+# Beylikduzu -> Halicioglu (31 durak)
 # ============================================
 
 # --- Ortam ---
 direction: "gidis"
-num_buses: 80               # 10 durakta 80 arac = yogun bunching
+num_buses: 200              # 31 durakta 200 arac
 dt: 0.1                    # Zaman adimi (saniye)
 episode_length: 36000      # 36000 * 0.1 = 3600 sn = 1 saat
-max_stops: 10               # Sadece ilk 10 durak (tam hat: 44)
+max_stops: 31               # Beylikduzu -> Halicioglu (31 durak)
 
 # --- PPO ---
 learning_rate: 0.0003      # Ogrenme hizi (3e-4)

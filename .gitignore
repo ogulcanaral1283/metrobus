@@ -23,3 +23,15 @@ npm-debug.log*
 
 # Temp
 tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+rl_env/venv/
+
+# ML checkpoints & training logs
+rl_env/checkpoints/*.pt
+rl_env/checkpoints/phase1/
+rl_env/logs/events.out.*
+rl_env/logs/phase1/

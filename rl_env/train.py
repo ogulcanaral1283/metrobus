@@ -123,14 +123,17 @@ def collect_rollout(
 
             obs = next_obs
 
-        # WS Bridge — loop SONRASI tek seferlik (GPU sync sadece burada)
-        if bridge:
-            info = env._get_info(env_idx=0)
-            bridge.update(
-                env, step=T, reward=all_rewards.mean().item(), info=info,
-                iteration=iteration,
-                total_reward=all_rewards.sum().item(),
-            )
+            # WS Bridge — her 16 step'te güncelle (donma önleme)
+            if bridge and t % 16 == 0:
+                info = env._get_info(env_idx=0)
+                # Son aksiyonları gönder (env[0] için)
+                last_actions = actions_bn[0].cpu().tolist() if actions_bn.dim() == 2 else None
+                bridge.update(
+                    env, step=t, reward=rewards_b.mean().item(), info=info,
+                    iteration=iteration,
+                    total_reward=all_rewards[:t+1].sum().item(),
+                    actions=last_actions,
+                )
 
     # ─── TOPLU CPU TRANSFER: (T, B, ...) → flatten to T*B entries ───
     # Reshape: (T, B, ...) → (T*B, ...)
@@ -305,15 +308,54 @@ def train(config: dict):
         direction=config.get("direction", "gidis"),
         max_stops=config.get("max_stops", 0),
         num_envs=num_envs,
+        reward_config={
+            "headway_weight": config.get("headway_weight", 1.0),
+            "bunching_penalty": config.get("bunching_penalty", 0.5),
+            "dwell_penalty": config.get("long_dwell_penalty", 0.1),
+            "speed_weight": config.get("speed_bonus_weight", 0.3),
+            "target_speed_kmh": config.get("target_speed_kmh", 40),
+        },
     )
 
     obs_dim = config.get("obs_dim", OBS_DIM)
     action_dim = config.get("action_dim", NUM_ACTIONS)
     global_obs_dim = obs_dim * num_buses
 
+    # obs_dim dogrulama — config ile env uyumlu mu?
+    if obs_dim != OBS_DIM:
+        print(f"UYARI: Config obs_dim={obs_dim} != GPU env OBS_DIM={OBS_DIM}!")
+        print(f"  GPU env her zaman {OBS_DIM} boyutlu obs uretiyor.")
+        print(f"  obs_dim={OBS_DIM} olarak duzeltildi.")
+        obs_dim = OBS_DIM
+        global_obs_dim = obs_dim * num_buses
+
     # --- Aglar ---
     actor = Actor(obs_dim, action_dim, config.get("actor_hidden", 64)).to(device)
     critic = Critic(global_obs_dim, config.get("critic_hidden", 128)).to(device)
+
+    # --- Warmstart: Phase 1 -> Phase 2 curriculum transfer ---
+    warmstart_path = config.get("warmstart_checkpoint", "")
+    if warmstart_path and os.path.exists(warmstart_path):
+        print(f"Warmstart: {warmstart_path} yukleniyor...")
+        actor_state = torch.load(warmstart_path, map_location=device, weights_only=True)
+        actor.load_state_dict(actor_state)
+        print(f"  Actor yuklendi ✓")
+
+        # Critic icin de ayni dizinde arayin
+        critic_path = warmstart_path.replace("best_actor.pt", "best_critic.pt")
+        if not os.path.exists(critic_path):
+            critic_path = warmstart_path.replace("actor", "critic")
+        if os.path.exists(critic_path):
+            critic_state = torch.load(critic_path, map_location=device, weights_only=True)
+            # Critic boyut degismisse (farkli num_buses) yukleme atlanir
+            try:
+                critic.load_state_dict(critic_state)
+                print(f"  Critic yuklendi ✓")
+            except RuntimeError as e:
+                print(f"  Critic boyut uyumsuzlugu, sifirdan baslatiliyor: {e}")
+        print(f"  Warmstart tamamlandi.")
+    elif warmstart_path:
+        print(f"UYARI: Warmstart dosyasi bulunamadi: {warmstart_path}")
 
     actor_optimizer = torch.optim.Adam(actor.parameters(), lr=config["learning_rate"])
     critic_optimizer = torch.optim.Adam(critic.parameters(), lr=config["learning_rate"])
