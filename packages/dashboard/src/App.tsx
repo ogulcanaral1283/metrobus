@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap 
 import L from 'leaflet';
 import { STATIONS_EAST, ROUTE_NETWORK, GIDIS_LANE, DONUS_LANE, PLATFORM_GEOMETRIES, GIDIS_SYNTHETIC_LANES, DONUS_SYNTHETIC_LANES, SHARED_WAY_IDS, PLATFORM_ENTRIES, STATION_SLOTS, haversineDistance, calculateBearing, moveAlongBearing, isRushHour, formatDuration, SimEngine } from '@metrobus/shared';
 import type { SimVehicle, SimState } from '@metrobus/shared';
+import { useIETTLive, HAT_COLORS } from './hooks/useIETTLive';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -121,8 +122,9 @@ function phaseColor(vehicle: SimVehicle): string {
 // ==========================================
 
 function vehicleIcon(vehicle: SimVehicle) {
-    const c = phaseColor(vehicle);
     const v = vehicle as any;
+    // Live IETT modda hat rengini kullan, sim modda faz rengini
+    const c = v._iett ? (HAT_COLORS[v._iett.hatkodu] || '#2196F3') : phaseColor(vehicle);
     const isBunched = v.isBunched || false;
     const warning = v.bunchingWarning;
     const predictive = v.predictiveDecision;
@@ -276,77 +278,89 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = ({ vehicle }) => {
                 <div style={{ fontFamily: 'Inter,sans-serif', minWidth: '220px', lineHeight: '1.6' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <strong style={{ fontSize: '15px' }}>🚍 {vehicle.code}</strong>
-                        <span style={{ fontSize: '10px', background: '#333', color: '#aaa', padding: '2px 6px', borderRadius: '3px' }}>
-                            {vehicle.vehicleType?.brand || 'Mercedes'} {vehicle.vehicleType?.lengthMeters || 20}m
-                        </span>
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: phaseColor(vehicle), marginTop: '4px' }}>
-                        {getPhaseDetail(vehicle)}
-                    </div>
-                    <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
-                    <div style={{ fontSize: '11px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px' }}>
-                        <span>🏎️ Hız:</span>
-                        <span style={{ fontWeight: 700 }}>{(vehicle.speed * 3.6).toFixed(1)} km/h</span>
-                        <span>📈 İvme:</span>
-                        <span style={{ fontWeight: 700 }}>{vehicle.acceleration.toFixed(2)} m/s²</span>
-                        <span>📍 Pozisyon:</span>
-                        <span style={{ fontWeight: 700 }}>{(vehicle.positionMeters / 1000).toFixed(2)} km</span>
-                        <span>🧭 Yön:</span>
-                        <span style={{ fontWeight: 700, color: vehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726' }}>
-                            {vehicle.direction === 'gidis' ? '→ Gidiş' : '← Dönüş'}
-                        </span>
-                    </div>
-                    <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
-                    <div style={{ fontSize: '11px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px' }}>
-                        <span>🚏 Sonraki Durak:</span>
-                        <span style={{ fontWeight: 700 }}>#{vehicle.nextStopIndex}</span>
-                        <span>🔢 Toplam Durak:</span>
-                        <span style={{ fontWeight: 700 }}>{vehicle.totalStops}</span>
-                        {vehicle.phase === 'stopped' && <>
-                            <span>⏱️ Kalan Süre:</span>
-                            <span style={{ fontWeight: 700, color: '#4CAF50' }}>{vehicle.dwellRemaining.toFixed(1)}s</span>
-                        </>}
-                        {(vehicle as any).isQueuing && <>
-                            <span>⏳ Kuyruk Süresi:</span>
-                            <span style={{ fontWeight: 700, color: '#E91E63' }}>{(vehicle as any).queueWaitTime.toFixed(1)}s</span>
-                        </>}
-                        {vehicle.phase === 'stopped' && <>
-                            <span>🚪 Kapı:</span>
-                            <span style={{ fontWeight: 700, color: '#4CAF50' }}>AÇIK</span>
-                        </>}
-                        {vehicle.phase === 'departing' && <>
-                            <span>🚪 Kapı:</span>
-                            <span style={{ fontWeight: 700, color: '#F44336' }}>KAPALI</span>
-                        </>}
-                    </div>
-                    {vehicle.manualOverride !== null && (
-                        <div style={{ marginTop: '4px', fontSize: '10px', color: '#F44336', fontWeight: 700 }}>
-                            ⬤ MANUEL KONTROL: {vehicle.manualOverride === 0 ? 'DURDURULDU' : `Max ${vehicle.manualOverride} m/s`}
-                        </div>
-                    )}
-                    {/* Predictive Engine Kararı */}
-                    {(vehicle as any).predictiveDecision && (
-                        <div style={{
-                            marginTop: '4px', padding: '4px 6px', borderRadius: '4px',
-                            background: (vehicle as any).predictiveDecision.decision === 'SPEED_FILTER'
-                                ? 'rgba(0,188,212,0.15)' : 'rgba(255,87,34,0.15)'
-                        }}>
-                            <div style={{
-                                fontSize: '10px', fontWeight: 700,
-                                color: (vehicle as any).predictiveDecision.decision === 'SPEED_FILTER' ? '#00BCD4' : '#FF5722'
+                        {(vehicle as any)._iett ? (
+                            <span style={{
+                                fontSize: '11px', padding: '2px 8px', borderRadius: '10px', fontWeight: 700,
+                                background: HAT_COLORS[(vehicle as any)._iett.hatkodu] || '#333',
+                                color: '#fff',
                             }}>
-                                🧠 {(vehicle as any).predictiveDecision.decision === 'SPEED_FILTER' ? 'Hız Filtreleme' : 'Bunching Kabul'}
+                                {(vehicle as any)._iett.hatkodu}
+                            </span>
+                        ) : (
+                            <span style={{ fontSize: '10px', background: '#333', color: '#aaa', padding: '2px 6px', borderRadius: '3px' }}>
+                                {vehicle.vehicleType?.brand || 'Mercedes'} {vehicle.vehicleType?.lengthMeters || 20}m
+                            </span>
+                        )}
+                    </div>
+
+                    {/* IETT Live bilgiler */}
+                    {(vehicle as any)._iett ? (
+                        <>
+                            <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
+                            <div style={{ fontSize: '11px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px' }}>
+                                <span>🗺️ Güzergah:</span>
+                                <span style={{ fontWeight: 700, fontSize: '10px' }}>{(vehicle as any)._iett.hatad}</span>
+                                <span>📍 Yön:</span>
+                                <span style={{ fontWeight: 700, color: vehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726' }}>
+                                    {(vehicle as any)._iett.yon}
+                                </span>
+                                <span>🕐 Güncelleme:</span>
+                                <span style={{ fontWeight: 700 }}>{(vehicle as any)._iett.son_konum_zamani?.split(' ')[1] || '?'}</span>
                             </div>
-                            <div style={{ fontSize: '9px', color: '#aaa', marginTop: '2px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
-                                <span>Score A: <b style={{ color: '#fff' }}>{(vehicle as any).predictiveDecision.scoreA}</b></span>
-                                <span>Score B: <b style={{ color: '#fff' }}>{(vehicle as any).predictiveDecision.scoreB}</b></span>
-                                <span>Kazanç: <b style={{ color: (vehicle as any).predictiveDecision.timeSaved > 0 ? '#4CAF50' : '#F44336' }}>{(vehicle as any).predictiveDecision.timeSaved}s</b></span>
-                                <span>Hedef: <b style={{ color: '#00BCD4' }}>{((vehicle as any).predictiveDecision.vTarget * 3.6).toFixed(0)} km/h</b></span>
+                        </>
+                    ) : (
+                        <>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: phaseColor(vehicle), marginTop: '4px' }}>
+                                {getPhaseDetail(vehicle)}
                             </div>
-                        </div>
+                            <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
+                            <div style={{ fontSize: '11px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px' }}>
+                                <span>🏎️ Hız:</span>
+                                <span style={{ fontWeight: 700 }}>{(vehicle.speed * 3.6).toFixed(1)} km/h</span>
+                                <span>📈 İvme:</span>
+                                <span style={{ fontWeight: 700 }}>{vehicle.acceleration.toFixed(2)} m/s²</span>
+                                <span>📍 Pozisyon:</span>
+                                <span style={{ fontWeight: 700 }}>{(vehicle.positionMeters / 1000).toFixed(2)} km</span>
+                                <span>🧭 Yön:</span>
+                                <span style={{ fontWeight: 700, color: vehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726' }}>
+                                    {vehicle.direction === 'gidis' ? '→ Gidiş' : '← Dönüş'}
+                                </span>
+                            </div>
+                            <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '6px 0' }} />
+                            <div style={{ fontSize: '11px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px' }}>
+                                <span>🚏 Sonraki Durak:</span>
+                                <span style={{ fontWeight: 700 }}>#{vehicle.nextStopIndex}</span>
+                                <span>🔢 Toplam Durak:</span>
+                                <span style={{ fontWeight: 700 }}>{vehicle.totalStops}</span>
+                                {vehicle.phase === 'stopped' && <>
+                                    <span>⏱️ Kalan Süre:</span>
+                                    <span style={{ fontWeight: 700, color: '#4CAF50' }}>{vehicle.dwellRemaining.toFixed(1)}s</span>
+                                </>}
+                            </div>
+                            {vehicle.manualOverride !== null && (
+                                <div style={{ marginTop: '4px', fontSize: '10px', color: '#F44336', fontWeight: 700 }}>
+                                    ⬤ MANUEL KONTROL: {vehicle.manualOverride === 0 ? 'DURDURULDU' : `Max ${vehicle.manualOverride} m/s`}
+                                </div>
+                            )}
+                            {(vehicle as any).predictiveDecision && (
+                                <div style={{
+                                    marginTop: '4px', padding: '4px 6px', borderRadius: '4px',
+                                    background: (vehicle as any).predictiveDecision.decision === 'SPEED_FILTER'
+                                        ? 'rgba(0,188,212,0.15)' : 'rgba(255,87,34,0.15)'
+                                }}>
+                                    <div style={{
+                                        fontSize: '10px', fontWeight: 700,
+                                        color: (vehicle as any).predictiveDecision.decision === 'SPEED_FILTER' ? '#00BCD4' : '#FF5722'
+                                    }}>
+                                        🧠 {(vehicle as any).predictiveDecision.decision === 'SPEED_FILTER' ? 'Hız Filtreleme' : 'Bunching Kabul'}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
+
                     <div style={{ marginTop: '4px', fontSize: '9px', color: '#666' }}>
-                        📐 {vehicle.latitude.toFixed(5)}, {vehicle.longitude.toFixed(5)} | H: {vehicle.heading.toFixed(0)}°
+                        📐 {vehicle.latitude.toFixed(5)}, {vehicle.longitude.toFixed(5)}
                     </div>
                 </div>
             </Popup>
@@ -379,6 +393,10 @@ const App: React.FC = () => {
     const [timeScale, setTimeScale] = useState(5);
     const [mapTile, setMapTile] = useState<MapTileMode>('dark');
     const mapInstanceRef = useRef<L.Map | null>(null);
+
+    // === LIVE IETT MODE ===
+    const [liveMode, setLiveMode] = useState(true);
+    const iettLive = useIETTLive(liveMode, 2000);
 
     // === TRAINING MODE ===
     const [trainingMode, setTrainingMode] = useState(false);
@@ -501,10 +519,12 @@ const App: React.FC = () => {
         };
     }, [trainingMode]);
 
-    const vehicles = [
-        ...(simState.gidis?.vehicles ?? []),
-        ...(simState.donus?.vehicles ?? []),
-    ];
+    const vehicles = liveMode
+        ? iettLive.vehicles
+        : [
+            ...(simState.gidis?.vehicles ?? []),
+            ...(simState.donus?.vehicles ?? []),
+        ];
 
     const getEngine = (dir: 'gidis' | 'donus') => dir === 'gidis' ? gidisRef.current : donusRef.current;
 
@@ -561,8 +581,42 @@ const App: React.FC = () => {
             <aside className="sidebar">
                 <div className="sidebar-header">
                     <h1>🚍 Metrobüs</h1>
-                    <span className="badge">CANLI</span>
+                    <span className="badge" style={{
+                        background: liveMode ? 'linear-gradient(135deg,#f44336,#e91e63)' : 'linear-gradient(135deg,#2196F3,#1976D2)',
+                    }}>{liveMode ? '🔴 CANLI' : '🔵 SİM'}</span>
                 </div>
+
+                {/* Mod Toggle */}
+                <div style={{ padding: '0 16px 8px', display: 'flex', gap: '4px' }}>
+                    <button
+                        onClick={() => { setLiveMode(true); setTrainingMode(false); }}
+                        style={{
+                            flex: 1, padding: '8px', border: 'none', borderRadius: '6px',
+                            background: liveMode ? '#F44336' : '#37474F', color: '#fff',
+                            cursor: 'pointer', fontSize: '11px', fontWeight: 700,
+                            transition: 'all 0.2s',
+                        }}
+                    >🔴 CANLI IETT</button>
+                    <button
+                        onClick={() => setLiveMode(false)}
+                        style={{
+                            flex: 1, padding: '8px', border: 'none', borderRadius: '6px',
+                            background: !liveMode && !trainingMode ? '#2196F3' : '#37474F', color: '#fff',
+                            cursor: 'pointer', fontSize: '11px', fontWeight: 700,
+                            transition: 'all 0.2s',
+                        }}
+                    >🔵 SİMÜLASYON</button>
+                </div>
+
+                {/* Live Mode Info */}
+                {liveMode && (
+                    <div style={{ padding: '0 16px 8px', fontSize: '10px', color: iettLive.connected ? '#4CAF50' : '#F44336' }}>
+                        {iettLive.connected
+                            ? `● Bağlı — Son: ${iettLive.lastUpdate} | API: ${iettLive.apiCalls * 7} çağrı`
+                            : `○ ${iettLive.error || 'Bağlanıyor...'} (live_server.py çalışıyor mu?)`
+                        }
+                    </div>
+                )}
 
                 {/* İstatistikler */}
                 <div className="stats-grid">
@@ -584,9 +638,31 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Hat Dağılımı — sadece live modda */}
+                {liveMode && vehicles.length > 0 && (
+                    <div style={{ padding: '0 16px 8px' }}>
+                        <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Hat Dağılımı</div>
+                        {Object.entries(
+                            vehicles.reduce<Record<string, number>>((acc, v) => {
+                                const hat = (v as any)._iett?.hatkodu || '?';
+                                acc[hat] = (acc[hat] || 0) + 1;
+                                return acc;
+                            }, {})
+                        ).sort((a, b) => b[1] - a[1]).map(([hat, cnt]) => (
+                            <div key={hat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '1px 0' }}>
+                                <span style={{ color: HAT_COLORS[hat] || '#888', fontWeight: 600 }}>{hat}</span>
+                                <span style={{ color: '#fff', fontWeight: 700 }}>{cnt}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 {/* Rush Hour durumu */}
                 <div className={`rush-indicator ${simState.gidis?.isRushHour ? 'active' : ''}`}>
-                    {simState.gidis?.isRushHour ? '🔴 PİK SAAT — Yoğun trafik' : '🟢 Normal trafik akışı'}
+                    {liveMode
+                        ? (iettLive.cached ? '📦 Cache verisi' : '🌐 Taze IETT verisi')
+                        : (simState.gidis?.isRushHour ? '🔴 PİK SAAT — Yoğun trafik' : '🟢 Normal trafik akışı')
+                    }
                 </div>
 
                 {/* ===== TRAINING MODE TOGGLE ===== */}

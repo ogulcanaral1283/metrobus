@@ -30,8 +30,15 @@ __pycache__/
 *.pyo
 rl_env/venv/
 
+# Build outputs (all packages)
+**/dist/
+
 # ML checkpoints & training logs
+checkpoints/
 rl_env/checkpoints/*.pt
 rl_env/checkpoints/phase1/
-rl_env/logs/events.out.*
-rl_env/logs/phase1/
+logs/
+rl_env/logs/
+
+# Snapshots
+snapshots/
