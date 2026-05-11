@@ -1,13 +1,13 @@
 """
 Simülasyon Konfigürasyon Sabitleri & Dataclass'lar
-TypeScript sim-types.ts'den Python'a taşındı.
+Analitik kontrol motoru ve simülasyon ortamı için veri yapıları.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-# Sabit zaman adımı (saniye) — RL eğitiminde kararlılık için
+# Sabit zaman adımı (saniye)
 DT: float = 0.1
 
 # Araç boyu (metre) — Mercedes-Benz Citaro metrobüs (TS vehicleType.lengthMeters ile senkron)
@@ -54,7 +54,7 @@ class SimConfig:
 
     # === Genel ===
     vehicle_count: int = 15
-    time_scale: float = 1.0             # RL'de 1.0 (gerçek zamanlı)
+    time_scale: float = 1.0             # 1.0 = gerçek zamanlı
 
 
 @dataclass
@@ -71,9 +71,9 @@ class SimVehicle:
     next_stop_index: int = 0
     total_stops: int = 0
     total_distance: float = 0.0
-    last_dwell_time: float = 0.0    # son durakta kalınan süre (obs için)
-    skip_next_stop: bool = False    # RL aksiyonu: sonraki durağı atla
-    holding_extra: float = 0.0      # RL aksiyonu: ek bekleme süresi
+    last_dwell_time: float = 0.0    # son durakta kalınan süre
+    skip_next_stop: bool = False    # kontrolcü kararı: sonraki durağı atla
+    holding_extra: float = 0.0      # kontrolcü kararı: ek bekleme süresi (sn)
     queue_wait_time: float = 0.0    # kuyrukta fiziksel bekleme süresi (sn)
     is_queuing: bool = False         # kuyrukta mı (durak dolu)
     slot_meter_position: float = 0.0 # perondaki atanmış pozisyon

@@ -23,6 +23,16 @@ if (typeof document !== 'undefined' && !document.getElementById(BUNCHING_STYLE_I
             50% { box-shadow: 0 0 10px 5px rgba(255,152,0,0.6); }
         }
         .bunch-pulse-warn { animation: bunchPulseWarn 1.5s ease-in-out infinite; }
+        @keyframes queuedPulse {
+            0%, 100% { box-shadow: 0 0 5px 3px rgba(204,255,0,0.5); }
+            50% { box-shadow: 0 0 14px 7px rgba(204,255,0,0.9); }
+        }
+        .queued-pulse { animation: queuedPulse 1.2s ease-in-out infinite; }
+        @keyframes blockedPulse {
+            0%, 100% { box-shadow: 0 0 5px 2px rgba(233,30,99,0.4); }
+            50% { box-shadow: 0 0 12px 6px rgba(233,30,99,0.85); }
+        }
+        .blocked-pulse { animation: blockedPulse 0.8s ease-in-out infinite; }
         @keyframes speedFilterPulse {
             0%, 100% { box-shadow: 0 0 4px 2px rgba(0,188,212,0.3); }
             50% { box-shadow: 0 0 10px 5px rgba(0,188,212,0.7); }
@@ -126,18 +136,28 @@ function vehicleIcon(vehicle: SimVehicle) {
     // Live IETT modda hat rengini kullan, sim modda faz rengini
     const c = v._iett ? (HAT_COLORS[v._iett.hatkodu] || '#2196F3') : phaseColor(vehicle);
     const isBunched = v.isBunched || false;
-    const warning = v.bunchingWarning;
     const predictive = v.predictiveDecision;
 
-    // Pulse class önceliği: sadece predictive engine göstergeleri
+    const isQueued = vehicle.phase === 'queued';
+    const isBlocked = vehicle.phase === 'blocked';
+    const speedFactor = v._analytic?.speedFactor ?? 1.0;
+    const isSpeedAdjusted = speedFactor < 0.95 && !isQueued && !isBlocked && !isBunched;
+
+    // Pulse class önceliği: bunching > blocked > queued > speedAdjust
     let pulseClass = '';
     let border = '#fff';
-    if (predictive?.decision === 'SPEED_FILTER') {
+    if (isBunched) {
+        pulseClass = 'bunch-pulse';
+        border = '#F44336';  // Kırmızı — yığılma
+    } else if (isBlocked) {
+        pulseClass = 'blocked-pulse';
+        border = '#E91E63';  // Pembe — peronda sıkışmış
+    } else if (isQueued) {
+        pulseClass = 'queued-pulse';
+        border = '#CCFF00';  // Fosforlu sarı — dışarıda bekliyor
+    } else if (isSpeedAdjusted) {
         pulseClass = 'speed-filter-pulse';
-        border = '#00BCD4';  // Cyan
-    } else if (predictive?.decision === 'BUNCHING_ACCEPT') {
-        pulseClass = 'bunch-accept-pulse';
-        border = '#FF5722';  // Turuncu-kırmızı
+        border = '#00BCD4';  // Cyan mavi — hız ayarı
     }
 
     // Araç boyutları (harita üzerinde piksel)
@@ -148,14 +168,27 @@ function vehicleIcon(vehicle: SimVehicle) {
     const typeCode = vt?.code || 'MB';
     const dirColor = vehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726';
 
-    // Predictive gösterge ikonu
-    const peIndicator = predictive?.decision === 'SPEED_FILTER'
-        ? `<circle cx="${busW - 3}" cy="3" r="3" fill="#00BCD4" stroke="#fff" stroke-width="0.5"/>`
-        : predictive?.decision === 'BUNCHING_ACCEPT'
-            ? `<circle cx="${busW - 3}" cy="3" r="3" fill="#FF5722" stroke="#fff" stroke-width="0.5"/>`
-            : '';
+    // Durum gösterge ikonu (köşe badge)
+    const statusIndicator = isBunched
+        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#F44336" stroke="#fff" stroke-width="0.5"/>
+           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">B</text>`
+        : isBlocked
+        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#E91E63" stroke="#fff" stroke-width="0.5"/>
+           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">X</text>`
+        : isQueued
+        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#CCFF00" stroke="#333" stroke-width="0.5"/>
+           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#333" font-weight="900">Q</text>`
+        : isSpeedAdjusted
+        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#00BCD4" stroke="#fff" stroke-width="0.5"/>
+           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">S</text>`
+        : '';
 
-    // Hit area büyütme: görsel boyut aynı kalır, tıklama alanı daha geniş
+    const hasStatus = isBunched || isBlocked || isQueued || isSpeedAdjusted;
+
+    // Özel durum ise stroke kalınlaştır
+    const strokeWidth = hasStatus ? '2.5' : '1.5';
+
+    // Hit area büyütme
     const padX = 8;
     const padY = 8;
     const hitW = busW + padX * 2;
@@ -172,17 +205,25 @@ function vehicleIcon(vehicle: SimVehicle) {
             <div class="${pulseClass}" style="
                 position:absolute;top:${padY}px;left:${padX}px;
                 width:${busW}px;height:${busH}px;
+                border-radius:4px;
             ">
                 <svg width="${busW}" height="${busH}" viewBox="0 0 ${busW} ${busH}">
                     <rect x="1" y="1" width="${busW - 2}" height="${busH - 2}" rx="3" ry="3"
-                        fill="${c}" stroke="${border}" stroke-width="1.5"/>
+                        fill="${c}" stroke="${border}" stroke-width="${strokeWidth}"/>
                     <rect x="2" y="2" width="3" height="${busH - 4}" rx="1" fill="${dirColor}" opacity="0.8"/>
                     <rect x="${busW - 5}" y="2" width="3" height="${busH - 4}" rx="1" fill="#fff" opacity="0.4"/>
                     <line x1="8" y1="1.5" x2="8" y1="1.5" y2="${busH - 1.5}" stroke="#fff" stroke-width="0.5" opacity="0.3"/>
                     <text x="${busW / 2}" y="${busH / 2 + 1}" text-anchor="middle" dominant-baseline="middle"
                         font-size="6" fill="#fff" font-weight="700" font-family="Inter,sans-serif">${typeCode}</text>
-                    ${peIndicator}
+                    ${statusIndicator}
                 </svg>
+                ${isSpeedAdjusted ? `<div style="
+                    position:absolute;top:-16px;left:50%;transform:translateX(-50%);
+                    background:#00BCD4;color:#fff;font-size:7px;font-weight:700;
+                    padding:1px 4px;border-radius:3px;white-space:nowrap;
+                    font-family:Inter,sans-serif;pointer-events:none;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.4);
+                ">Hız Ayarı (x${speedFactor.toFixed(2)})</div>` : ''}
             </div>
         </div>`,
         iconSize: [hitW, hitH],
@@ -265,7 +306,7 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = ({ vehicle }) => {
             m.setLatLng([vehicle.latitude, vehicle.longitude]);
             m.setIcon(vehicleIcon(vehicle));
         }
-    }, [vehicle.latitude, vehicle.longitude, vehicle.phase, vehicle.speed, (vehicle as any).isBunched, (vehicle as any).predictiveDecision?.decision]);
+    }, [vehicle.latitude, vehicle.longitude, vehicle.phase, vehicle.speed, (vehicle as any).isBunched, (vehicle as any)._analytic?.speedFactor]);
 
     return (
         <Marker
@@ -582,8 +623,8 @@ const App: React.FC = () => {
                 <div className="sidebar-header">
                     <h1>🚍 Metrobüs</h1>
                     <span className="badge" style={{
-                        background: liveMode ? 'linear-gradient(135deg,#f44336,#e91e63)' : 'linear-gradient(135deg,#2196F3,#1976D2)',
-                    }}>{liveMode ? '🔴 CANLI' : '🔵 SİM'}</span>
+                        background: trainingMode ? 'linear-gradient(135deg,#00BCD4,#0097A7)' : liveMode ? 'linear-gradient(135deg,#f44336,#e91e63)' : 'linear-gradient(135deg,#2196F3,#1976D2)',
+                    }}>{trainingMode ? 'ANALITIK' : liveMode ? 'CANLI' : 'SIM'}</span>
                 </div>
 
                 {/* Mod Toggle */}
@@ -665,39 +706,127 @@ const App: React.FC = () => {
                     }
                 </div>
 
-                {/* ===== TRAINING MODE TOGGLE ===== */}
+                {/* ===== ANALITIK MOTOR TOGGLE ===== */}
                 <div style={{ padding: '0 16px 8px' }}>
                     <button
                         className={`btn ${trainingMode ? 'btn-green' : ''}`}
-                        style={{ width: '100%', fontSize: '12px', padding: '8px', background: trainingMode ? '#E91E63' : '#37474F' }}
-                        onClick={() => setTrainingMode(!trainingMode)}
+                        style={{ width: '100%', fontSize: '12px', padding: '8px', background: trainingMode ? '#00BCD4' : '#37474F' }}
+                        onClick={() => { const next = !trainingMode; setTrainingMode(next); if (next) setLiveMode(false); }}
                     >
-                        {trainingMode ? '🧠 Eğitim İzleme AÇIK' : '🧠 Eğitim İzleme'}
+                        {trainingMode ? '⚙ Analitik Motor AKTIF' : '⚙ Analitik Motor'}
                     </button>
                     {trainingMode && (
                         <div style={{ marginTop: '4px', fontSize: '10px', color: wsConnected ? '#4CAF50' : '#F44336', textAlign: 'center' }}>
-                            {wsConnected ? '● Bağlandı (ws://localhost:8765)' : '○ Bağlanıyor...'}
+                            {wsConnected ? '● Baglandi (sim_server.py)' : '○ Baglanıyor... (python sim_server.py calistirin)'}
                         </div>
                     )}
                 </div>
 
-                {/* Training Metrikleri */}
-                {trainingMode && trainingData?.metrics && (
-                    <div style={{ padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                        <h3 style={{ color: '#E91E63', fontSize: '12px', margin: '0 0 6px' }}>📊 Eğitim Metrikleri</h3>
+                {/* Analitik Motor Metrikleri */}
+                {trainingMode && trainingData?.analytics && (
+                    <div style={{ padding: '8px 16px', borderTop: '1px solid rgba(0,188,212,0.3)' }}>
+                        <h3 style={{ color: '#00BCD4', fontSize: '12px', margin: '0 0 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            Analitik Motor
+                            <span style={{ fontSize: '9px', color: '#666', fontWeight: 400 }}>
+                                {trainingData.time ? `${Math.floor(trainingData.time / 60)}dk` : ''}
+                            </span>
+                        </h3>
+
+                        {/* === Filo Kontrol: Arac Sayisi Input === */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', padding: '6px 8px', background: 'rgba(0,188,212,0.08)', borderRadius: '6px' }}>
+                            <span style={{ fontSize: '11px', color: '#aaa' }}>Arac Sayisi:</span>
+                            <input
+                                type="number"
+                                min={1}
+                                defaultValue={15}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = parseInt((e.target as HTMLInputElement).value);
+                                        if (val >= 1) {
+                                            wsRef.current?.send(JSON.stringify({ action: 'set_vehicle_count', value: val }));
+                                        }
+                                    }
+                                }}
+                                onBlur={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (val >= 1) {
+                                        wsRef.current?.send(JSON.stringify({ action: 'set_vehicle_count', value: val }));
+                                    }
+                                }}
+                                style={{
+                                    width: '60px', padding: '4px 6px', border: '1px solid rgba(0,188,212,0.3)',
+                                    borderRadius: '6px', background: '#1a2332', color: '#fff', fontSize: '14px',
+                                    fontWeight: 700, textAlign: 'center', outline: 'none',
+                                }}
+                            />
+                            <span style={{ fontSize: '10px', color: '#666' }}>({vehicles.length} aktif)</span>
+                        </div>
+
+                        {/* === Metrikler (Tooltip aciklamali) === */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '11px', color: '#ccc' }}>
-                            <div>İterasyon: <b style={{ color: '#fff' }}>{trainingData.metrics.iteration}</b></div>
+                            <div title="Headway CV (Coefficient of Variation) = standart sapma / ortalama. Araclar arasi zaman araliginin ne kadar duzensiz oldugunu olcer. 0 = mukemmel esit dagilim, <0.3 iyi, >1.0 kotu.">
+                                Headway CV: <b style={{ color: trainingData.analytics.headwayCV < 0.3 ? '#4CAF50' : trainingData.analytics.headwayCV < 1.0 ? '#FF9800' : '#F44336' }}>{trainingData.analytics.headwayCV?.toFixed(3)}</b>
+                            </div>
+                            <div title="Bunching = birbirine 60 saniyeden yakin olan arac cifti sayisi. Yolcular icin uzun bekleme + bos otobusler demektir.">
+                                Bunching: <b style={{ color: trainingData.analytics.bunchingPairs > 0 ? '#FF9800' : '#4CAF50' }}>{trainingData.analytics.bunchingPairs}</b>
+                            </div>
+                            <div title="Filodaki araclar arasindaki ortalama zaman araligi (saniye). Yolcunun duraga geldigi anda ortalama bekleme suresi bunun yarisina esittir.">
+                                Ort. Headway: <b style={{ color: '#fff' }}>{trainingData.analytics.meanHeadway?.toFixed(0)}s</b>
+                            </div>
+                            <div title="Kontrolcunun hedefledigi ideal zaman araligi. Hat uzunlugu / (arac sayisi x seyir hizi) formulu ile hesaplanir. Arac eklenince duser.">
+                                Hedef: <b style={{ color: '#00BCD4' }}>{trainingData.analytics.targetHeadway?.toFixed(0)}s</b>
+                            </div>
+                            <div title="Aktif Hold = su anda durakta ek sure bekletilen arac sayisi. PID kontrolcu onetki araca cok yakin olan araci durakta tutar.">
+                                Hold: <b style={{ color: '#fff' }}>{trainingData.analytics.activeHolds}</b>
+                            </div>
+                            <div title="Hiz Filtresi = hizi dusurulerek yavaslatilan arac sayisi. Kontrolcu araclarin birbirine yaklasmasini engellemek icin kullanir.">
+                                Filtre: <b style={{ color: '#fff' }}>{trainingData.analytics.activeFilters}</b>
+                            </div>
+                        </div>
+
+                        {/* === PID Kazanclari === */}
+                        {trainingData.analytics.pidGains && (
+                            <div style={{ marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '4px' }}>
+                                <div style={{ fontSize: '10px', color: '#888', marginBottom: '2px' }} title="PID = Proportional-Integral-Derivative kontrolcu. Kp = anlik hataya tepki, Ki = birikimis hatanin duzeltilmesi, Kd = hata degisim hizina tepki.">PID Kazanclari:</div>
+                                <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: '#aaa' }}>
+                                    <span title="Proportional (Oransal): headway hatasina anlik tepki gucunu belirler. Buyuk Kp = agresif duzeltme.">Kp=<b style={{ color: '#fff' }}>{trainingData.analytics.pidGains.kp?.toFixed(3)}</b></span>
+                                    <span title="Integral (Toplam): uzun sureli birikimis hatayi duzeltir. Buyuk Ki = yavasa yakinsama ama karisiz durum.">Ki=<b style={{ color: '#fff' }}>{trainingData.analytics.pidGains.ki?.toFixed(3)}</b></span>
+                                    <span title="Derivative (Turev): headway degisim hizina gore onceden mudahale eder. Buyuk Kd = salinimlari bastirip kararlilik saglar.">Kd=<b style={{ color: '#fff' }}>{trainingData.analytics.pidGains.kd?.toFixed(3)}</b></span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* === Parametre Rehberi === */}
+                        <details style={{ marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '4px' }}>
+                            <summary style={{ fontSize: '10px', color: '#666', cursor: 'pointer', userSelect: 'none' }}>Parametreler ne anlama geliyor?</summary>
+                            <div style={{ fontSize: '9px', color: '#888', lineHeight: '1.6', marginTop: '4px' }}>
+                                <b style={{ color: '#4CAF50' }}>Headway CV</b> — Araclar arasi zaman duzensizligi. 0 = esit dagilim, {'<'}0.3 iyi.<br/>
+                                <b style={{ color: '#FF9800' }}>Bunching</b> — 60sn'den yakin arac cifti. Fazlaysa filo kumelenmis.<br/>
+                                <b style={{ color: '#00BCD4' }}>Hedef Headway</b> — Hat / (N x hiz). Arac eklendikce duser.<br/>
+                                <b style={{ color: '#fff' }}>Hold</b> — Durakta ek tutma yapilan arac (PID karari).<br/>
+                                <b style={{ color: '#fff' }}>Filtre</b> — Hizi dusurulerek yavaslatan arac sayisi.<br/>
+                                <b style={{ color: '#fff' }}>Kp/Ki/Kd</b> — PID kazanclari: Oransal / Integral / Turev.<br/>
+                            </div>
+                        </details>
+                    </div>
+                )}
+                {/* Legacy Training Metrikleri */}
+                {trainingMode && trainingData?.metrics && !trainingData?.analytics && (
+                    <div style={{ padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                        <h3 style={{ color: '#E91E63', fontSize: '12px', margin: '0 0 6px' }}>Egitim Metrikleri</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '11px', color: '#ccc' }}>
+                            <div>Iterasyon: <b style={{ color: '#fff' }}>{trainingData.metrics.iteration}</b></div>
                             <div>Step: <b style={{ color: '#fff' }}>{trainingData.metrics.step}</b></div>
                             <div>Reward: <b style={{ color: trainingData.metrics.reward > 0 ? '#4CAF50' : '#F44336' }}>{trainingData.metrics.reward?.toFixed(3)}</b></div>
                             <div>Toplam R: <b style={{ color: '#fff' }}>{trainingData.metrics.totalReward?.toFixed(1)}</b></div>
-                            <div>Hız: <b style={{ color: '#fff' }}>{trainingData.metrics.avgSpeed?.toFixed(1)} km/h</b></div>
+                            <div>Hiz: <b style={{ color: '#fff' }}>{trainingData.metrics.avgSpeed?.toFixed(1)} km/h</b></div>
                             <div>Min Gap: <b style={{ color: trainingData.metrics.minGap < 100 ? '#F44336' : '#fff' }}>{trainingData.metrics.minGap?.toFixed(0)}m</b></div>
                             <div>Duran: <b style={{ color: '#fff' }}>{trainingData.metrics.numStopped}</b></div>
                             <div>Bunching: <b style={{ color: trainingData.metrics.bunching > 0 ? '#FF9800' : '#fff' }}>{trainingData.metrics.bunching}</b></div>
                         </div>
                         {trainingData.rewardComponents && Object.keys(trainingData.rewardComponents).length > 0 && (
                             <div style={{ marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '4px' }}>
-                                <div style={{ fontSize: '10px', color: '#888', marginBottom: '2px' }}>Reward Bileşenleri:</div>
+                                <div style={{ fontSize: '10px', color: '#888', marginBottom: '2px' }}>Reward Bilesenleri:</div>
                                 {Object.entries(trainingData.rewardComponents).map(([k, v]: [string, any]) =>
                                     typeof v === 'number' && (
                                         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#aaa' }}>
