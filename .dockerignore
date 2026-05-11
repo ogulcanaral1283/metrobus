@@ -1,5 +1,8 @@
 node_modules
-dist
-*.log
 .git
+__pycache__
+*.pyc
+checkpoints/
+*.pt
 .env
+.gemini

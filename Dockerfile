@@ -1,5 +1,5 @@
 # ========================================
-# Stage 1: Build
+# Stage 1: Build Dashboard
 # ========================================
 FROM node:20-alpine AS builder
 
@@ -22,15 +22,15 @@ COPY packages/dashboard/ packages/dashboard/
 RUN npm -w packages/dashboard run build
 
 # ========================================
-# Stage 2: Serve with Nginx
+# Stage 2: Serve with Nginx + Proxy
 # ========================================
 FROM nginx:alpine
 
-# Copy built assets
+# Built assets
 COPY --from=builder /app/packages/dashboard/dist /usr/share/nginx/html
 
-# SPA routing — all paths to index.html
-COPY packages/dashboard/nginx.conf /etc/nginx/conf.d/default.conf
+# Nginx config — SPA routing + backend proxy
+COPY packages/dashboard/nginx.docker.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

@@ -1,0 +1,30 @@
+# ========================================
+# Python Servisler (sim_server + live_server)
+# ========================================
+FROM python:3.11-slim AS python-base
+
+WORKDIR /app
+
+# Python bağımlılıkları
+RUN pip install --no-cache-dir websockets numpy
+
+# Proje dosyalarını kopyala
+COPY rl_env/ rl_env/
+COPY sim_server.py .
+COPY live_server.py .
+COPY anlik_oto_konum.py .
+COPY packages/shared/src/constants/platform-entries.ts packages/shared/src/constants/platform-entries.ts
+
+# ========================================
+# Stage: Sim Server
+# ========================================
+FROM python-base AS sim-server
+EXPOSE 8765
+CMD ["python", "-u", "sim_server.py"]
+
+# ========================================
+# Stage: Live Server
+# ========================================
+FROM python-base AS live-server
+EXPOSE 8888
+CMD ["python", "-u", "live_server.py"]
