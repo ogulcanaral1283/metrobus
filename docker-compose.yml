@@ -46,7 +46,7 @@ services:
       dockerfile: Dockerfile
     container_name: metrobus-dashboard
     ports:
-      - "80:80"
+      - "3000:80"
     depends_on:
       - sim-server
       - live-server

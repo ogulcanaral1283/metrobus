@@ -6,7 +6,7 @@ FROM python:3.11-slim AS python-base
 WORKDIR /app
 
 # Python bağımlılıkları
-RUN pip install --no-cache-dir websockets numpy
+RUN pip install --no-cache-dir websockets numpy requests
 
 # Proje dosyalarını kopyala
 COPY rl_env/ rl_env/
