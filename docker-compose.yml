@@ -14,9 +14,9 @@ services:
       - "8765:8765"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost',8765)); s.close()"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "python", "-c", "import asyncio,websockets; asyncio.get_event_loop().run_until_complete(websockets.connect('ws://localhost:8765'))"]
+      interval: 15s
+      timeout: 10s
       retries: 3
 
   # ========================

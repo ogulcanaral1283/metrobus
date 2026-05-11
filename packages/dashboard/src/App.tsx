@@ -513,7 +513,8 @@ const App: React.FC = () => {
         let reconnectTimer: number;
 
         const connect = () => {
-            const ws = new WebSocket('ws://localhost:8765');
+            const wsHost = window.location.hostname || 'localhost';
+            const ws = new WebSocket(`ws://${wsHost}:8765`);
             wsRef.current = ws;
 
             ws.onopen = () => {
