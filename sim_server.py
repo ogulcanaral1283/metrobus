@@ -656,7 +656,7 @@ async def main():
     print(f"  Durdurmak icin Ctrl+C")
     print("=" * 50)
 
-    async with websockets.serve(simulation_handler, "localhost", WS_PORT):
+    async with websockets.serve(simulation_handler, "0.0.0.0", WS_PORT):
         await asyncio.Future()  # sonsuza kadar calis
 
 
