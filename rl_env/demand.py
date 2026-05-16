@@ -97,7 +97,6 @@ class DemandProfile:
         self,
         stop_name: str,
         hour: float,
-        is_weekend: bool = False,
     ) -> float:
         """
         Durak ve saat bazli talep carpanini dondur.
@@ -105,20 +104,13 @@ class DemandProfile:
         Args:
             stop_name: Durak adi
             hour: Saati (float, 7.5 = 07:30)
-            is_weekend: Hafta sonu mu
         """
-        # Profildeki en yakin saati bul
         hour_int = max(5, min(23, int(hour)))
 
         if stop_name in self.profiles:
             base = self.profiles[stop_name].get(hour_int, 0.3)
         else:
-            # Bilinmeyen durak -> orta duzey
             base = 0.3
-
-        # Hafta sonu %40 azaltma
-        if is_weekend:
-            base *= 0.6
 
         return base
 
@@ -126,16 +118,14 @@ class DemandProfile:
         self,
         stop_name: str,
         hour: float,
-        is_weekend: bool = False,
         rng: Optional[np.random.Generator] = None,
     ) -> int:
         """Talep profiline gore yolcu sayisi uret."""
         if rng is None:
             rng = np.random.default_rng()
-        multiplier = self.get_demand_multiplier(stop_name, hour, is_weekend)
+        multiplier = self.get_demand_multiplier(stop_name, hour)
         base_passengers = 5 + int(multiplier * 20)
 
-        # ±%15 rastgele gurultu
         noise = 1.0 + float(rng.uniform(-0.15, 0.15))
         return max(1, round(base_passengers * noise))
 
@@ -145,7 +135,6 @@ class DemandProfile:
         hour: float,
         door_time: float = 5.0,
         per_passenger_time: float = 1.5,
-        is_weekend: bool = False,
         rng: Optional[np.random.Generator] = None,
     ) -> float:
         """

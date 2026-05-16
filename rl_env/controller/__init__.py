@@ -1,22 +1,35 @@
 """
-Analitik Kontrol Motoru — 3 Katmanlı Bus Bunching Önleme Sistemi
+Durak-Slot Merkezli Akıllı Kontrol Motoru — 4 Aşamalı Sistem
 
-Katman 1: HeadwayModel     — Headway dinamiği ODE sistemi
-Katman 2: PIDController    — Discrete-time PID hold regülatörü
-Katman 3: LookaheadOptimizer — Multi-stop finite-horizon DP optimizer
-Birleştirme: ControlMerger — PID reflex + Lookahead proaktif → final komut
+Aşama 1: StationArrivalScheduler — Durak varış zamanlaması (slot çizelgesi)
+Aşama 2: PIDController           — Slot-timing error tabanlı PID düzeltme
+Aşama 3: SpeedProfiler           — Enerji-optimal hız profili
+Aşama 4: CascadeCoordinator      — Çok-duraklı cascade propagasyon
+
+Destek:
+  HeadwayModel — Headway dinamiği (metrik + dashboard)
+
+Birleştirme: ControlMerger — 4 aşama + güvenlik → final komut
 """
 
 from .headway_model import HeadwayModel, HeadwayState
 from .pid_controller import PIDController
-from .lookahead_optimizer import LookaheadOptimizer
+from .station_arrival_scheduler import StationArrivalScheduler, ArrivalPlan, StationSchedule
+from .speed_profile import SpeedProfiler, SpeedCommand
+from .cascade_coordinator import CascadeCoordinator, CoordinatedPlan
 from .control_merger import ControlMerger, ControlCommand
 
 __all__ = [
     "HeadwayModel",
     "HeadwayState",
     "PIDController",
-    "LookaheadOptimizer",
+    "StationArrivalScheduler",
+    "ArrivalPlan",
+    "StationSchedule",
+    "SpeedProfiler",
+    "SpeedCommand",
+    "CascadeCoordinator",
+    "CoordinatedPlan",
     "ControlMerger",
     "ControlCommand",
 ]

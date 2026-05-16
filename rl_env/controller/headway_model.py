@@ -251,29 +251,6 @@ class HeadwayModel:
             "bunching_pairs": bunching_pairs,
         }
 
-    def get_transfer_function_params(self) -> dict:
-        """
-        Lineerleştirilmiş sistem transfer fonksiyonu parametreleri.
-
-        ODE: δḣ_i = -δv_i + δv_{i-1} + α·w_i
-        Denge noktası civarında: G(s) = 1 / (s + α)
-
-        Kutup: s = -α (kararlı, α > 0 olduğu sürece)
-        Zaman sabiti: τ = 1/α
-
-        Returns:
-            pole:          Kutup konumu (-α)
-            time_constant: Zaman sabiti (1/α sn)
-            dc_gain:       DC kazanç (1/α)
-            stable:        Kararlı mı (α > 0)
-        """
-        return {
-            "pole": -self.alpha,
-            "time_constant": 1.0 / max(self.alpha, 1e-6),
-            "dc_gain": 1.0 / max(self.alpha, 1e-6),
-            "stable": self.alpha > 0,
-        }
-
     def reset(self) -> None:
         """Episode başında türev state'ini sıfırla."""
         self._prev_headways.clear()

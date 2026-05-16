@@ -1,6 +1,6 @@
 """
 Istanbul Metrobus — Analitik Kontrol Motoru
-PID headway regülatörü + Lookahead karar motoru + Simülasyon.
+4 Aşamalı durak-slot merkezli kontrol sistemi + Simülasyon.
 """
 
 from .config import SimConfig, SimVehicle, TrafficZone, DEFAULT_CONFIG
@@ -11,13 +11,9 @@ from .controller import (
     HeadwayModel,
     HeadwayState,
     PIDController,
-    LookaheadOptimizer,
     ControlMerger,
     ControlCommand,
 )
-
-# Simülasyon
-from .simulation import SimulationEngine, StepResult, SimulationResult
 
 __all__ = [
     # Config
@@ -33,11 +29,6 @@ __all__ = [
     "HeadwayModel",
     "HeadwayState",
     "PIDController",
-    "LookaheadOptimizer",
     "ControlMerger",
     "ControlCommand",
-    # Simulation
-    "SimulationEngine",
-    "StepResult",
-    "SimulationResult",
 ]

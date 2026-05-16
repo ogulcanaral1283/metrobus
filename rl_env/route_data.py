@@ -217,22 +217,23 @@ def load_route(direction: Direction = "gidis", max_stops: int = 0) -> LinearRout
 
     route = linearize_route(edges, stops, direction)
 
-    # Slot bilgilerini ekle
+    # Platform uzunluklarını yükle
     slot_data = _load_station_slots()
     matched = 0
     for stop in route.stops:
         key = _normalize_name(stop.name)
         if key in slot_data:
-            stop.slot_count = slot_data[key]["slot_count"]
             stop.platform_length_meters = slot_data[key]["platform_length"]
             matched += 1
         else:
             for slot_key, slot_info in slot_data.items():
                 if slot_key in key or key in slot_key:
-                    stop.slot_count = slot_info["slot_count"]
                     stop.platform_length_meters = slot_info["platform_length"]
                     matched += 1
                     break
+
+    # Slot sayısını platform uzunluğundan hesapla: platform_length / (20m araç + 5m boşluk)
+    _recalculate_slot_counts(route)
 
     # Platform giriş noktalarına hizala (dashboard ile tutarlılık)
     _align_stops_to_platform_entries(route, direction)
@@ -274,6 +275,9 @@ def _load_from_cache(
     # Platform giriş noktalarına hizala (dashboard ile tutarlılık)
     _align_stops_to_platform_entries(route, direction)
 
+    # Slot sayısını platform uzunluğundan hesapla
+    _recalculate_slot_counts(route)
+
     # Rota kisaltma
     if max_stops > 0 and max_stops < len(route.stops):
         route.stops = route.stops[:max_stops]
@@ -282,6 +286,29 @@ def _load_from_cache(
             s.index = i
 
     return route
+
+
+# ── Slot sayısı hesaplama ────────────────────────────────────────
+
+# Araç uzunluğu + araçlar arası boşluk (metre)
+_BUS_LENGTH = 20.0
+_VEHICLE_GAP = 5.0
+_SLOT_SIZE = _BUS_LENGTH + _VEHICLE_GAP  # 25m per slot
+_DEFAULT_PLATFORM_LENGTH = 60.0  # veri eksikse varsayılan
+
+
+def _recalculate_slot_counts(route: LinearRoute) -> None:
+    """
+    Tüm durakların slot sayısını platform uzunluğundan hesapla.
+
+    Formül: slot_count = floor(platform_length / 25)
+    25m = 20m araç + 5m araçlar arası boşluk
+
+    Platform uzunluğu 0 veya eksikse varsayılan 60m kullanılır.
+    """
+    for stop in route.stops:
+        platform_len = stop.platform_length_meters if stop.platform_length_meters > 0 else _DEFAULT_PLATFORM_LENGTH
+        stop.slot_count = max(1, int(platform_len // _SLOT_SIZE))
 
 
 # ── Platform giriş noktası hizalama ──────────────────────────────

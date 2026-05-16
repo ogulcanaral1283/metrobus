@@ -75,7 +75,8 @@ def compute_target_speed(
     # 1. Varsayılan segment hız limiti
     target = min(target, config.default_speed_limit)
 
-    # 2. Durak yaklaşım frenleme — kademeli piecewise eğri (TS physics.ts ile senkron)
+    # 2. Durak yaklaşım frenleme — kinematik tabanlı sürekli eğri
+    #    v = sqrt(2 * b * d)  →  mesafeyle orantılı, kesintisiz yavaşlama
     if vehicle.next_stop_index < len(stops):
         next_stop = stops[vehicle.next_stop_index]
         dist_to_stop = next_stop.meter_position - vehicle.position_meters
@@ -84,24 +85,28 @@ def compute_target_speed(
         # bir sonraki durağa hemen frenleme — en az 30m serbest ivmelenme
         is_departing = vehicle.phase == "departing"
 
-        if 0 < dist_to_stop < config.approach_distance and not is_departing:
-            if dist_to_stop > 30:
-                # 150m-30m arası: kademeli yavaşlama
-                # Mesafe oranıyla 60% max hızdan lineer düş
-                ratio = (dist_to_stop - 30) / (config.approach_distance - 30)
-                braking_target = 3.0 + ratio * (config.max_speed * 0.6 - 3.0)
-            elif dist_to_stop > 10:
-                # 30m-10m arası: güçlü frenleme, 3 m/s'e doğru
-                ratio = (dist_to_stop - 10) / 20.0
-                braking_target = 1.0 + ratio * 2.0  # 3.0 → 1.0
-            elif dist_to_stop > 3:
-                # 10m-3m: creep hız
-                braking_target = 1.0
-            else:
-                # 3m altı: dur
-                braking_target = 0.0
+        if not is_departing:
+            if 0 < dist_to_stop < config.approach_distance:
+                if dist_to_stop <= 3.0:
+                    # Son 3m: tam dur (FSM stopped fazına geçebilsin)
+                    braking_target = 0.0
+                else:
+                    # Kinematik fren: v = sqrt(2 * b * d)
+                    kinematic = math.sqrt(2.0 * config.comfort_braking * dist_to_stop)
 
-            target = min(target, braking_target)
+                    # Erken yavaşlama: approach_distance'tan itibaren kademeli hız düşüşü
+                    # Böylece "approaching" fazına girer girmez hız azalmaya başlar
+                    # Son 40m'de kinematik fren devralır
+                    approach_ratio = dist_to_stop / config.approach_distance
+                    # 150m'de max_speed, 40m'de ~8 m/s, doğrusal azalma
+                    coast_speed = config.default_speed_limit * (0.5 + 0.5 * approach_ratio)
+
+                    braking_target = min(kinematic, coast_speed, config.max_speed)
+                target = min(target, braking_target)
+            elif dist_to_stop <= 0 and dist_to_stop > -10 and vehicle.phase == "approaching":
+                # Overshoot koruması: araç durağı geçti ama henüz durmadı
+                # Hâlâ approaching fazındaysa target=0 ile durdur
+                target = min(target, 0.0)
 
     # 3. Trafik bölgeleri
     for zone in traffic_zones:
@@ -133,6 +138,7 @@ def update_vehicle_physics(
     target_speed: float,
     leader: SimVehicle | None,
     config: SimConfig,
+    route_length: float = 0.0,
 ) -> None:
     """
     Tek araç için tek tick fizik güncellemesi.
@@ -146,26 +152,33 @@ def update_vehicle_physics(
         # IDM: öndeki aracı takip et
         # Gap = öndeki aracın ARKA TAMPONU - bizim ön tamponumuz
         leader_rear = leader.position_meters - VEHICLE_LENGTH
-        gap = max(0.1, leader_rear - vehicle.position_meters)
+        gap = leader_rear - vehicle.position_meters
+        # Wrap-around: negatif gap → siklik rota düzeltmesi
+        if gap < 0 and route_length > 0:
+            gap += route_length
+        gap = max(0.1, gap)
         delta_v = vehicle.speed - leader.speed
         accel = compute_idm(vehicle.speed, target_speed, gap, delta_v, config)
     else:
         # Serbest sürüş: hedef hıza doğru ivmelen
         speed_diff = target_speed - vehicle.speed
         if speed_diff > 0:
+            # İvmelenme: max_acceleration ile sınırla
             accel = min(config.max_acceleration, speed_diff / dt)
         else:
+            # Frenleme: comfort_braking ile sınırla (dt'ye bölme zaten clamp ediliyor)
             accel = max(-config.comfort_braking, speed_diff / dt)
 
     # Sınırla
     accel = max(-config.emergency_braking, min(config.max_acceleration, accel))
 
-    # Hız güncelle
+    # Kinematik güncelleme (doğru sıra: önce pozisyon, sonra hız)
     vehicle.acceleration = accel
-    vehicle.speed = max(0.0, vehicle.speed + accel * dt)
-
-    # Pozisyon güncelle
-    ds = vehicle.speed * dt + 0.5 * accel * dt * dt
+    v_old = vehicle.speed
+    ds = v_old * dt + 0.5 * accel * dt * dt
     ds = max(0.0, ds)
     vehicle.position_meters += ds
     vehicle.total_distance += ds
+
+    # Hız güncelle (pozisyondan SONRA)
+    vehicle.speed = max(0.0, v_old + accel * dt)

@@ -42,16 +42,27 @@ except ImportError:
 # Istanbul metrobus araci uzunlugu (metre) — TS VEHICLE_TYPES ile senkron
 BUS_LENGTH_METERS = 20.0
 
+# Araçlar arası boşluk (metre) — peron içi park mesafesi
+VEHICLE_GAP_METERS = 5.0
+
 # Güvenli kalkış mesafesi (metre)
 SAFE_GAP = 0.5
 
-# Araçlar arası boşluk (metre)
-VEHICLE_GAP = 0.4
+
+# Varsayılan platform uzunluğu (metre) — veri eksik duraklarda kullanılır
+DEFAULT_PLATFORM_LENGTH = 60.0
 
 
 # ============================================
 # Yardımcı Fonksiyonlar
 # ============================================
+
+def _effective_platform_length(stop: LinearStop) -> float:
+    """Durağın efektif platform uzunluğu. Veri eksikse varsayılan kullan."""
+    if stop.platform_length_meters > 0:
+        return stop.platform_length_meters
+    return DEFAULT_PLATFORM_LENGTH
+
 
 def is_inside_platform_zone(
     vehicle_position: float,
@@ -62,26 +73,28 @@ def is_inside_platform_zone(
     Araç peron alanı içinde mi?
     Peron alanı = [stop.meter_position - platform_length, stop.meter_position + 15]
     """
+    platform_len = _effective_platform_length(stop)
     vehicle_rear = vehicle_position - vehicle_length
-    platform_start = stop.meter_position - stop.platform_length_meters
-    platform_end = stop.meter_position + 15  # 15m tolerans
+    platform_start = stop.meter_position - platform_len
+    platform_end = stop.meter_position + vehicle_length  # araç uzunluğu kadar tolerans
 
     return vehicle_position <= platform_end and vehicle_rear >= platform_start - 2
 
 
 def compute_max_buses_at_stop(stop: LinearStop) -> int:
-    """Platform kapasite: station_slots.json'daki slotCount değerini kullan.
-
-    Eski formül (platform_length / 18) gerçekçi değildi.
-    Yeni yaklaşım: Overpass API'deki stop_position node sayısına dayalı
-    slotCount değeri (TS station-slots.ts ile senkron).
     """
-    if stop.slot_count > 0:
-        return stop.slot_count
-    # Fallback: platform uzunluğundan hesapla (25m/araç — 20m araç + 5m boşluk)
-    if stop.platform_length_meters > 0:
-        return max(2, math.floor(stop.platform_length_meters / 25))
-    return 1
+    Platform kapasitesi: platform_uzunluğu / (araç_uzunluğu + araçlar_arası_boşluk).
+
+    Her otobüs BUS_LENGTH_METERS (20m) + VEHICLE_GAP_METERS (5m) = 25m yer kaplar.
+    Platform uzunluğu bu değere bölünerek slot sayısı hesaplanır.
+
+    Örnek: 118m platform → 118 / 25 = 4 slot
+           91m platform  → 91 / 25  = 3 slot
+           55m platform  → 55 / 25  = 2 slot
+    """
+    platform_len = _effective_platform_length(stop)
+    slot_size = BUS_LENGTH_METERS + VEHICLE_GAP_METERS  # 25m
+    return max(1, math.floor(platform_len / slot_size))
 
 
 def get_vehicles_on_platform(
@@ -111,7 +124,7 @@ def compute_entry_position(
         return stop.meter_position
     last_vehicle = platform_vehicles[-1]
     last_rear = last_vehicle.position_meters - VEHICLE_LENGTH
-    return last_rear - VEHICLE_GAP
+    return last_rear - SAFE_GAP
 
 
 def fits_in_platform(
@@ -120,8 +133,9 @@ def fits_in_platform(
     stop: LinearStop,
 ) -> bool:
     """Aracın tamamı peron alanına sığıyor mu? (TS fitsInPlatform ile senkron)"""
+    platform_len = _effective_platform_length(stop)
     vehicle_rear = stop_position - vehicle_length
-    platform_start = stop.meter_position - stop.platform_length_meters
+    platform_start = stop.meter_position - platform_len
     front_ok = stop_position <= stop.meter_position + 2   # TS: +2m
     rear_ok = vehicle_rear >= platform_start - 1           # TS: -1m
     return front_ok and rear_ok
@@ -256,10 +270,20 @@ def update_station_fsm(
 
         # === PERON ALANI İÇİNDE VE DURMUŞ ===
         if in_zone and vehicle.speed < 0.5:
+            # Slot pozisyonunu doğru hesapla (üst üste binme önleme)
+            platform_vehicles = get_vehicles_on_platform(vehicle.next_stop_index, vehicle_list)
+            # Kendini listeden çıkar
+            platform_vehicles = [pv for pv in platform_vehicles if pv.id != vehicle.id]
+            entry_pos = compute_entry_position(next_stop, platform_vehicles)
+            # Mevcut pozisyon ile hesaplanan slot arasında makul olanı seç
+            # Araç zaten peron içindeyse, geriye gitmesine gerek yok
+            slot_pos = max(entry_pos, vehicle.position_meters) if platform_vehicles else vehicle.position_meters
+
             vehicle.phase = "stopped"
             vehicle.speed = 0.0
             vehicle.acceleration = 0.0
-            vehicle.slot_meter_position = vehicle.position_meters
+            vehicle.slot_meter_position = slot_pos
+            vehicle.position_meters = slot_pos
             vehicle.is_queuing = False
             vehicle.queue_wait_time = 0.0
             vehicle.total_stops += 1
@@ -271,7 +295,7 @@ def update_station_fsm(
             )
             dwell += vehicle.holding_extra
             vehicle.holding_extra = 0.0
-            vehicle.dwell_remaining = 1.0 + dwell
+            vehicle.dwell_remaining = dwell
             vehicle.last_dwell_time = dwell
             return
 
@@ -283,10 +307,13 @@ def update_station_fsm(
                 gap = leader_rear - vehicle.position_meters
                 if gap < SAFE_GAP:
                     # Öndeki araca çok yakın → BURADA DUR
+                    # Slot pozisyonunu öndeki aracın arkasına göre hesapla
+                    safe_pos = leader_rear - SAFE_GAP
                     vehicle.phase = "stopped"
                     vehicle.speed = 0.0
                     vehicle.acceleration = 0.0
-                    vehicle.slot_meter_position = vehicle.position_meters
+                    vehicle.slot_meter_position = safe_pos
+                    vehicle.position_meters = safe_pos
                     vehicle.is_queuing = False
                     vehicle.total_stops += 1
 
@@ -297,7 +324,7 @@ def update_station_fsm(
                     )
                     dwell += vehicle.holding_extra
                     vehicle.holding_extra = 0.0
-                    vehicle.dwell_remaining = 1.0 + dwell
+                    vehicle.dwell_remaining = dwell
                     vehicle.last_dwell_time = dwell
                     return
             # Frenlemeye devam
@@ -319,12 +346,11 @@ def update_station_fsm(
                 vehicle.speed = 0.0
                 vehicle.acceleration = 0.0
 
-        # Durağı geçtiyse
+        # Durağı tamamen geçtiyse → bir sonraki durağa ilerle (sonsuz döngü önleme)
         overshoot_limit = max(5, next_stop.platform_length_meters * 0.5)
-        if dist_to_stop <= -overshoot_limit:
-            vehicle.phase = "docking"
-            vehicle.is_queuing = False
-            vehicle.slot_meter_position = entry_pos
+        if dist_to_stop <= -overshoot_limit and not in_zone:
+            vehicle.phase = "cruising"
+            vehicle.next_stop_index += 1
 
     # ============================================
     # QUEUED — Peron girişinde bekleme
@@ -340,7 +366,25 @@ def update_station_fsm(
         if fits_in_platform(entry_pos, VEHICLE_LENGTH, next_stop):
             vehicle.phase = "docking"
             vehicle.is_queuing = False
-            vehicle.slot_meter_position = entry_pos
+            # Slot pozisyonu mevcut pozisyondan ileride olmalı
+            # Gerideyse araç zaten peronda → direkt stopped'a geç
+            if entry_pos <= vehicle.position_meters:
+                vehicle.phase = "stopped"
+                vehicle.speed = 0.0
+                vehicle.acceleration = 0.0
+                vehicle.slot_meter_position = vehicle.position_meters
+                vehicle.total_stops += 1
+                dwell = _compute_realistic_dwell(
+                    next_stop, config, is_rush_hour, rng,
+                    use_fixed_dwell, fixed_dwell_seconds,
+                    demand_profile, current_hour,
+                )
+                dwell += vehicle.holding_extra
+                vehicle.holding_extra = 0.0
+                vehicle.dwell_remaining = dwell
+                vehicle.last_dwell_time = dwell
+            else:
+                vehicle.slot_meter_position = entry_pos
 
     # ============================================
     # DOCKING — Slot'a yavaş ilerleme (2 m/s)
@@ -349,11 +393,15 @@ def update_station_fsm(
         dist_to_slot = vehicle.slot_meter_position - vehicle.position_meters
 
         if abs(dist_to_slot) < 1.0 or dist_to_slot < 0:
-            # Pozisyona ulaştı → ANINDA yolcu operasyonu
+            # Pozisyona ulaştı → yolcu operasyonu
             vehicle.phase = "stopped"
             vehicle.speed = 0.0
             vehicle.acceleration = 0.0
-            vehicle.position_meters = vehicle.slot_meter_position
+            # Overshoot varsa mevcut pozisyonda kal (geriye teleport yok)
+            if dist_to_slot >= -0.5:
+                vehicle.position_meters = vehicle.slot_meter_position
+            else:
+                vehicle.slot_meter_position = vehicle.position_meters
             vehicle.total_stops += 1
 
             dwell = _compute_realistic_dwell(
@@ -363,11 +411,22 @@ def update_station_fsm(
             )
             dwell += vehicle.holding_extra
             vehicle.holding_extra = 0.0
-            vehicle.dwell_remaining = 1.0 + dwell
+            vehicle.dwell_remaining = dwell
             vehicle.last_dwell_time = dwell
         else:
-            vehicle.speed = min(2.0, vehicle.speed + config.max_acceleration * dt)
-            vehicle.position_meters += vehicle.speed * dt
+            # Kinematik tutarlı docking: hızı önce sınırla, sonra hareket et
+            DOCKING_SPEED_CAP = 2.0  # m/s
+            v_old = vehicle.speed
+            # Hız cap üstündeyse önce frenle
+            if v_old > DOCKING_SPEED_CAP:
+                dock_accel = max(-config.comfort_braking, (DOCKING_SPEED_CAP - v_old) / dt)
+            elif v_old < DOCKING_SPEED_CAP:
+                dock_accel = min(config.max_acceleration, (DOCKING_SPEED_CAP - v_old) / dt)
+            else:
+                dock_accel = 0.0
+            ds = v_old * dt + 0.5 * dock_accel * dt * dt
+            vehicle.position_meters += max(0.0, ds)
+            vehicle.speed = max(0.0, min(DOCKING_SPEED_CAP, v_old + dock_accel * dt))
 
     # ============================================
     # STOPPED — Kapılar açık, yolcu operasyonu (PARALEL)
@@ -407,9 +466,14 @@ def update_station_fsm(
         vehicle.position_meters = vehicle.slot_meter_position
         vehicle.speed = 0.0
 
-        # Deadlock önleme: 10 saniye beklediyse zorla kalk
+        # Deadlock önleme: 5 saniye beklediyse VE önü açıksa kalk
         vehicle.queue_wait_time += dt
-        if vehicle.queue_wait_time > 10.0:
+        if vehicle.queue_wait_time > 5.0 and not is_blocked_by_gap(vehicle, vehicle.next_stop_index, vehicle_list):
+            vehicle.phase = "departing"
+            vehicle.queue_wait_time = 0.0
+            vehicle.next_stop_index += 1
+        elif vehicle.queue_wait_time > 15.0:
+            # Gerçek deadlock: 15s sonra zorla kalk (son çare)
             vehicle.phase = "departing"
             vehicle.queue_wait_time = 0.0
             vehicle.next_stop_index += 1

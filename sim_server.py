@@ -37,8 +37,10 @@ from rl_env.demand import DEFAULT_DEMAND
 from rl_env.traffic import update_traffic_zones
 from rl_env.controller.headway_model import HeadwayModel
 from rl_env.controller.pid_controller import PIDController
-from rl_env.controller.lookahead_optimizer import LookaheadOptimizer
 from rl_env.controller.control_merger import ControlMerger, ControlCommand
+from rl_env.controller.station_arrival_scheduler import StationArrivalScheduler
+from rl_env.controller.speed_profile import SpeedProfiler
+from rl_env.controller.cascade_coordinator import CascadeCoordinator
 
 try:
     import websockets
@@ -128,6 +130,9 @@ class RouteGeometry:
 # Simulasyon Yoneticisi
 # ============================================
 
+_VEHICLE_TYPE_JSON = {"brand": "Analitik", "model": "Motor", "lengthMeters": 20, "code": "AM"}
+
+
 class SimManager:
     """Analitik motor simulasyonunu yonetir ve dashboard verisini uretir."""
 
@@ -187,16 +192,33 @@ class SimManager:
 
         self.pid = PIDController(kp=pid_kp, ki=pid_ki, kd=pid_kd, dt=self.dt, u_max=60.0)
 
-        self.lookahead = LookaheadOptimizer(
-            horizon=3,
+        # 4 aşamalı durak-slot merkezli kontrol bileşenleri
+        self.scheduler = StationArrivalScheduler(
+            approach_distance=self.config.approach_distance,
+            comfort_braking=self.config.comfort_braking,
             max_speed=self.config.max_speed,
+        )
+
+        self.profiler = SpeedProfiler(
+            max_speed=self.config.max_speed,
+            approach_distance=self.config.approach_distance,
+            comfort_braking=self.config.comfort_braking,
+            max_acceleration=self.config.max_acceleration,
+        )
+
+        self.cascade = CascadeCoordinator(
+            horizon=5,
+            max_speed=self.config.max_speed,
+            approach_distance=self.config.approach_distance,
             comfort_braking=self.config.comfort_braking,
         )
 
         self.controller = ControlMerger(
             headway_model=self.headway_model,
             pid=self.pid,
-            lookahead=self.lookahead,
+            scheduler=self.scheduler,
+            profiler=self.profiler,
+            coordinator=self.cascade,
             lookahead_interval=50,
             min_gap=25.0,
             vehicle_length=VEHICLE_LENGTH,
@@ -363,6 +385,8 @@ class SimManager:
 
         # 3. Fizik + FSM
         sorted_v = sorted(self.vehicles, key=lambda v: v.position_meters)
+        last_stop_pos = self.stops[-1].meter_position if self.stops else self.route_length * 0.95
+        wrap_threshold = last_stop_pos + 100
         for veh in self.vehicles:
             cmd = commands.get(veh.id)
             if cmd:
@@ -380,7 +404,7 @@ class SimManager:
                 target_speed *= cmd.speed_factor
 
             leader = self._find_leader(veh, sorted_v)
-            update_vehicle_physics(veh, dt, target_speed, leader, self.config)
+            update_vehicle_physics(veh, dt, target_speed, leader, self.config, self.route_length)
 
             update_station_fsm(
                 veh, dt, self.stops, self.config,
@@ -392,7 +416,7 @@ class SimManager:
             )
 
             # Son duraga ulasan araci basa al (yeni sefer)
-            if veh.position_meters >= self.route_length * 0.98:
+            if veh.position_meters >= wrap_threshold:
                 veh.position_meters = 0.0
                 veh.speed = self.config.max_speed * 0.5
                 veh.acceleration = 0.0
@@ -454,6 +478,9 @@ class SimManager:
         if len(self.vehicles) <= 3:
             return  # min 3 arac
         removed = self.vehicles.pop()
+        # Dead state temizle (bellek sızıntısı önleme)
+        self.pid.reset_vehicle(removed.id)
+        self.headway_model._prev_headways.pop(removed.id, None)
         self.headway_model.update_target(num_vehicles=len(self.vehicles))
         print(f"[SIM] Arac cikarildi: #{removed.id}, kalan: {len(self.vehicles)}")
 
@@ -475,13 +502,13 @@ class SimManager:
         else:
             # Arac cikar — en sondakilerden
             while len(self.vehicles) > count and len(self.vehicles) > 3:
-                self.vehicles.pop()
+                removed = self.vehicles.pop()
+                self.pid.reset_vehicle(removed.id)
+                self.headway_model._prev_headways.pop(removed.id, None)
             self.headway_model.update_target(num_vehicles=len(self.vehicles))
 
-        # PID'i sifirla (yeni denge noktasi)
-        self.pid.reset()
-        self.controller._tick_counter = 0
-        self.controller._cached_lookahead.clear()
+        # Kontrolcuyu sifirla (yeni denge noktasi)
+        self.controller.reset()
         print(f"[SIM] Arac sayisi ayarlandi: {len(self.vehicles)}")
 
     def get_dashboard_state(self) -> dict:
@@ -496,26 +523,28 @@ class SimManager:
         # Kontrol komutlari (son step'ten)
         cmd_cache = self._last_commands
 
-        # Bunching tespit: hangi araclar birbirine cok yakin?
+        # Bunching tespit — O(N) sorted scan
         bunching_threshold = self.headway_model.target_headway / 3.0
         bunched_ids = set()
         bunching_pairs_list = []
         hs_map = {h.vehicle_id: h for h in hs}
+        sorted_v = sorted(self.vehicles, key=lambda v: v.position_meters)
+        id_to_leader = {}
+        for idx, veh in enumerate(sorted_v):
+            nxt = sorted_v[(idx + 1) % len(sorted_v)]
+            id_to_leader[veh.id] = nxt
         for h in hs:
             if h.time_headway < bunching_threshold and h.time_headway > 0:
                 bunched_ids.add(h.vehicle_id)
-                # Ondeki araci da bul
-                veh = next((v for v in self.vehicles if v.id == h.vehicle_id), None)
-                if veh:
-                    leader = self._find_leader(veh, sorted(self.vehicles, key=lambda v: v.position_meters))
-                    if leader:
-                        bunched_ids.add(leader.id)
-                        bunching_pairs_list.append({
-                            "id1": h.vehicle_id,
-                            "id2": leader.id,
-                            "headway": round(h.time_headway, 1),
-                            "gap": round(h.distance_headway, 0),
-                        })
+                leader = id_to_leader.get(h.vehicle_id)
+                if leader:
+                    bunched_ids.add(leader.id)
+                    bunching_pairs_list.append({
+                        "id1": h.vehicle_id,
+                        "id2": leader.id,
+                        "headway": round(h.time_headway, 1),
+                        "gap": round(h.distance_headway, 0),
+                    })
 
         # Araclari SimVehicle formatina cevir
         vehicles_json = []
@@ -530,7 +559,7 @@ class SimManager:
             v_json = {
                 "id": veh.id,
                 "code": f"AM-{veh.id:02d}",
-                "vehicleType": {"brand": "Analitik", "model": "Motor", "lengthMeters": 20, "code": "AM"},
+                "vehicleType": _VEHICLE_TYPE_JSON,
                 "positionMeters": round(veh.position_meters, 1),
                 "speed": round(veh.speed, 2),
                 "acceleration": round(veh.acceleration, 2),
@@ -542,22 +571,18 @@ class SimManager:
                 "dwellRemaining": round(veh.dwell_remaining, 1),
                 "nextStopIndex": veh.next_stop_index,
                 "totalStops": veh.total_stops,
-                "totalDistance": round(veh.total_distance, 0),
                 "manualOverride": None,
                 "isQueuing": veh.is_queuing,
                 "queueWaitTime": round(veh.queue_wait_time, 1),
                 "lastDwellTime": round(veh.last_dwell_time, 1),
-                "assignedSlotIndex": -1,
-                "slotMeterPosition": round(veh.slot_meter_position, 1),
-                # Bunching flag
                 "isBunched": is_bunched,
-                # Analitik motor ozel alanlar
                 "_analytic": {
                     "headway": round(hs_state.time_headway, 1) if hs_state else 0,
                     "headwayError": round(hs_state.headway_error, 1) if hs_state else 0,
-                    "holdTime": round(cmd.hold_time, 1) if cmd else 0,
                     "speedFactor": round(cmd.speed_factor, 2) if cmd else 1.0,
                     "source": cmd.source if cmd else "none",
+                    "overflowRisk": round(cmd.overflow_risk, 2) if cmd else 0,
+                    "energySaving": round(cmd.energy_saving, 2) if cmd else 0,
                 },
             }
             vehicles_json.append(v_json)
@@ -574,9 +599,37 @@ class SimManager:
             for tz in self.traffic_zones
         ]
 
+        # Her durak için dolu slot, yaklaşan ve kuyrukta sayısını hesapla
+        occupied_by_stop: dict[int, int] = {}
+        approaching_by_stop: dict[int, int] = {}
+        queued_by_stop: dict[int, int] = {}
+        for v in self.vehicles:
+            si = v.next_stop_index
+            if v.phase in ("stopped", "doorsClosed", "blocked", "docking"):
+                occupied_by_stop[si] = occupied_by_stop.get(si, 0) + 1
+            elif v.phase == "queued":
+                queued_by_stop[si] = queued_by_stop.get(si, 0) + 1
+            elif v.phase == "approaching":
+                approaching_by_stop[si] = approaching_by_stop.get(si, 0) + 1
+
+        stops_json = [
+            {
+                "index": s.index,
+                "name": s.name,
+                "meterPosition": round(s.meter_position, 1),
+                "platformLengthMeters": round(s.platform_length_meters, 0),
+                "slotCount": s.slot_count,
+                "occupiedSlots": occupied_by_stop.get(s.index, 0),
+                "approachingCount": approaching_by_stop.get(s.index, 0),
+                "queuedCount": queued_by_stop.get(s.index, 0),
+            }
+            for s in self.stops
+        ]
+
         return {
             "time": round(self.sim_time, 1),
             "vehicles": vehicles_json,
+            "stops": stops_json,
             "trafficZones": traffic_json,
             "isRushHour": is_rush,
             "running": True,
@@ -590,6 +643,8 @@ class SimManager:
                 "pidGains": self.pid.get_gains(),
                 "activeHolds": sum(1 for c in cmd_cache.values() if c.hold_time > 0),
                 "activeFilters": sum(1 for c in cmd_cache.values() if c.speed_factor < 0.95),
+                # Yeni: durak-slot metrikleri
+                **self.controller.get_state_summary(),
             },
         }
 
@@ -599,7 +654,8 @@ class SimManager:
 # ============================================
 
 WS_PORT = 8765
-TICK_INTERVAL = 0.05  # 50ms = 20 FPS
+SIM_TICK = 0.05       # 50ms — fizik motoru her zaman 20 Hz çalışır
+WS_SEND_INTERVAL = 0.2  # 200ms = 5 FPS dashboard güncellemesi (RAM dostu)
 
 
 async def simulation_handler(websocket):
@@ -634,13 +690,20 @@ async def simulation_handler(websocket):
             pass
 
     async def send_state():
-        """Simulasyon state'ini periyodik gonder."""
+        """Simulasyon state'ini periyodik gonder.
+        Fizik motoru SIM_TICK (50ms) hızında çalışır,
+        dashboard güncellemesi WS_SEND_INTERVAL (200ms = 5 FPS) hızında gönderilir.
+        """
         try:
+            send_accumulator = 0.0
             while True:
-                sim.tick(TICK_INTERVAL)
-                state = sim.get_dashboard_state()
-                await websocket.send(json.dumps(state, ensure_ascii=False))
-                await asyncio.sleep(TICK_INTERVAL)
+                sim.tick(SIM_TICK)
+                send_accumulator += SIM_TICK
+                if send_accumulator >= WS_SEND_INTERVAL:
+                    send_accumulator = 0.0
+                    state = sim.get_dashboard_state()
+                    await websocket.send(json.dumps(state, ensure_ascii=False))
+                await asyncio.sleep(SIM_TICK)
         except Exception as e:
             print(f"[WS] Baglanti kapandi: {e}")
 
@@ -652,7 +715,7 @@ async def main():
     print("=" * 50)
     print("[ANALITIK MOTOR] Simulasyon Sunucusu")
     print(f"  WebSocket: ws://localhost:{WS_PORT}")
-    print(f"  FPS: {1/TICK_INTERVAL:.0f}")
+    print(f"  Fizik: {1/SIM_TICK:.0f} Hz | Dashboard: {1/WS_SEND_INTERVAL:.0f} FPS")
     print(f"  Durdurmak icin Ctrl+C")
     print("=" * 50)
 

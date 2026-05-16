@@ -212,6 +212,89 @@ class PIDController:
             for hs in headway_states
         ]
 
+    # ═══════════════════════════════════════════
+    # Slot-Timing PID Modu (Aşama 2)
+    # ═══════════════════════════════════════════
+
+    def compute_slot_timing(
+        self,
+        vehicle_id: int,
+        current_eta: float,
+        ideal_arrival: float,
+        overflow_risk: float = 1.0,
+    ) -> PIDOutput:
+        """
+        Slot-timing error tabanlı PID.
+
+        Headway error yerine slot zamanlama hatasını düzeltir:
+            error = ideal_varış - tahmini_ETA
+            Pozitif: erken varacak → yavaşla (speed_factor düşür)
+            Negatif: geç varacak → hızlan (speed_factor artır)
+
+        Kazanıçlar taşma riskine göre adaptif:
+            Yüksek risk → agresif düzeltme (hızlı tepki, slot kaçırma)
+            Düşük risk → yumuşak düzeltme (enerji koru)
+
+        Args:
+            vehicle_id:     Araç ID
+            current_eta:    Mevcut hızla tahmini varış (s)
+            ideal_arrival:  İdeal varış zamanı (s) — Aşama 1'den
+            overflow_risk:  Durak taşma riski (0-N, >1 = taşma var)
+
+        Returns:
+            PIDOutput — speed_factor bilgisi (hold_time yerine)
+                hold_time alanı speed_factor_delta olarak kullanılır:
+                  > 0: yavaşla (erken varacaksın)
+                  = 0: müdahale yok
+        """
+        state = self._get_state(vehicle_id)
+
+        # Slot timing error: pozitif = erken varacak (yavaşlamalı)
+        error = ideal_arrival - current_eta
+
+        # Adaptif kazanıçlar: risk yüksekse agresif
+        risk_scale = max(0.5, min(2.0, overflow_risk))
+        kp_adaptive = self.kp * risk_scale
+        ki_adaptive = self.ki * risk_scale
+        kd_adaptive = self.kd
+
+        # ── Proportional ──
+        p_term = kp_adaptive * error
+
+        # ── Integral (anti-windup) ──
+        state.integral += ki_adaptive * error * self.dt
+        integral_limit = self.u_max * 0.5
+        state.integral = max(-integral_limit, min(integral_limit, state.integral))
+        i_term = state.integral
+
+        # ── Derivative ──
+        d_error = (error - state.prev_error) / max(self.dt, 1e-6)
+        d_term = kd_adaptive * d_error
+        d_term = max(-self.u_max * 0.3, min(self.u_max * 0.3, d_term))
+
+        # ── Toplam ──
+        raw_output = p_term + i_term + d_term
+        output = max(0.0, min(self.u_max, raw_output))
+        saturated = (raw_output != output)
+
+        if saturated:
+            saturation_error = output - raw_output
+            state.integral += self.anti_windup_gain * saturation_error * self.dt
+
+        state.prev_error = error
+        state.prev_output = output
+
+        return PIDOutput(
+            vehicle_id=vehicle_id,
+            hold_time=output,  # slot-timing modda: speed adjustment magnitude
+            p_term=p_term,
+            i_term=i_term,
+            d_term=d_term,
+            raw_output=raw_output,
+            error=error,
+            saturated=saturated,
+        )
+
     def set_gains(self, kp: float, ki: float, kd: float) -> None:
         """PID kazançlarını güncelle (tuning sonrası)."""
         self.kp = kp

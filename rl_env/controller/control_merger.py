@@ -1,56 +1,61 @@
 """
-Kontrol Birleştirici — PID Reflex + Lookahead Proaktif → Final Komut
-=====================================================================
+Kontrol Birleştirici — 4 Aşamalı Durak-Slot Merkezli Sistem
+=============================================================
 
-İki katmanın çıktılarını tek bir ControlCommand'a birleştirir.
+Eski sistem: PID (headway) + Lookahead → merge
+Yeni sistem: 4 aşama durak-slot optimizasyonu
 
-Birleştirme Stratejisi:
-    1. PID her tick çalışır (reflex — anlık headway düzeltme)
-    2. Lookahead her N tick'te çalışır (proaktif — multi-stop plan)
-    3. hold_time = max(pid_hold, lookahead_hold)
-       Gerekçe: Her iki katman da "en az bu kadar tut" der.
-       En kısıtlayıcı olan kazanır.
-    4. speed_factor: Lookahead aktifse lookahead, değilse 1.0
-    5. skip_stop: Sadece Lookahead önerir
-    6. Forward safety: Öndeki araca minimum mesafe her zaman korunur
+Akış (her 5s — stratejik):
+    Aşama 1: StationArrivalScheduler → her araca ideal varış zamanı
+    Aşama 4: CascadeCoordinator → cascade etkileri çöz, net speed_factor
+    Aşama 3: SpeedProfiler → enerji-optimal hız profili
+
+Akış (her 0.1s — taktik):
+    Aşama 2: PID (slot-timing) → plandan sapma düzeltme
 
 Güvenlik Katmanı:
     Forward safety tüm kontrol çıktılarının üstünde çalışır.
-    Öndeki araca çok yakınsa speed_factor zorla düşürülür.
     Bu katman override edilemez.
 """
 
 from __future__ import annotations
 
-import math
 import threading
-from dataclasses import dataclass, field
-from typing import List, Optional
+import time
+from dataclasses import dataclass
+from typing import List, Optional, Dict
 
 try:
     from ..config import SimVehicle
     from .headway_model import HeadwayModel, HeadwayState
     from .pid_controller import PIDController, PIDOutput
-    from .lookahead_optimizer import LookaheadOptimizer, LookaheadDecision
+    from .station_arrival_scheduler import (
+        StationArrivalScheduler, StationSchedule, ArrivalPlan, compute_eta,
+    )
+    from .speed_profile import SpeedProfiler, SpeedCommand
+    from .cascade_coordinator import CascadeCoordinator, CoordinatedPlan
 except ImportError:
     from config import SimVehicle
     from headway_model import HeadwayModel, HeadwayState
     from pid_controller import PIDController, PIDOutput
-    from lookahead_optimizer import LookaheadOptimizer, LookaheadDecision
+    from station_arrival_scheduler import (
+        StationArrivalScheduler, StationSchedule, ArrivalPlan, compute_eta,
+    )
+    from speed_profile import SpeedProfiler, SpeedCommand
+    from cascade_coordinator import CascadeCoordinator, CoordinatedPlan
 
 
 @dataclass
 class ControlCommand:
     """
     Tek araç için final kontrol komutu.
-
     Bu yapı simülasyon motoruna verilir ve araç davranışını belirler.
     """
     vehicle_id: int
     hold_time: float            # durakta ek tutma süresi (sn), ≥ 0
     speed_factor: float         # hız çarpanı [0.3, 1.3], 1.0 = normal
     skip_stop: bool             # True = sonraki durağı atla
-    source: str                 # "pid" | "lookahead" | "merged" | "safety"
+    source: str                 # "scheduler" | "pid" | "cascade" | "safety" | "none"
 
     # Debug bilgileri
     pid_hold: float = 0.0
@@ -59,45 +64,63 @@ class ControlCommand:
     headway_cv: float = 0.0
     cost: float = 0.0
 
+    # Yeni: slot-timing bilgileri
+    ideal_arrival: float = 0.0
+    current_eta: float = 0.0
+    overflow_risk: float = 0.0
+    energy_saving: float = 0.0
+
 
 class ControlMerger:
     """
-    PID + Lookahead birleştirici ve güvenlik katmanı.
+    4 Aşamalı durak-slot merkezli kontrol birleştirici.
 
     Parametreler:
-        headway_model:  Katman 1 — headway hesaplama
-        pid:            Katman 2 — PID regülatör
-        lookahead:      Katman 3 — lookahead optimizer
-        lookahead_interval: Lookahead kaç tick'te bir çalışır
-        min_gap:        Minimum takip mesafesi (m) — güvenlik
-        vehicle_length: Araç boyu (m)
+        headway_model:    Headway hesaplama (metrik için korunuyor)
+        pid:              PID regülatör (slot-timing modunda)
+        scheduler:        Aşama 1 — durak varış zamanlaması
+        profiler:         Aşama 3 — enerji-optimal hız profili
+        coordinator:      Aşama 4 — cascade koordinasyon
+        schedule_interval: Scheduler kaç tick'te bir çalışır
+        min_gap:          Minimum takip mesafesi (m) — güvenlik
+        vehicle_length:   Araç boyu (m)
     """
 
     def __init__(
         self,
         headway_model: HeadwayModel,
         pid: PIDController,
-        lookahead: LookaheadOptimizer,
-        lookahead_interval: int = 50,       # 50 × 0.1s = 5 saniyede bir
+        scheduler: Optional[StationArrivalScheduler] = None,
+        profiler: Optional[SpeedProfiler] = None,
+        coordinator: Optional[CascadeCoordinator] = None,
+        lookahead_interval: int = 50,
         min_gap: float = 25.0,
         vehicle_length: float = 20.0,
     ):
         self.headway_model = headway_model
         self.pid = pid
-        self.lookahead = lookahead
+
+        # Yeni 4 aşama
+        self.scheduler = scheduler or StationArrivalScheduler()
+        self.profiler = profiler or SpeedProfiler()
+        self.coordinator = coordinator or CascadeCoordinator()
+
         self.lookahead_interval = lookahead_interval
         self.min_gap = min_gap
         self.vehicle_length = vehicle_length
 
-        # Lookahead cache
-        self._tick_counter = 0
-        self._cached_lookahead: dict[int, LookaheadDecision] = {}
-        self._la_running = False
+        # Scheduler cache
+        self._tick_counter = self.lookahead_interval - 1  # ilk tick'te hemen calistir
+        self._cached_schedule: Optional[StationSchedule] = None
+        self._cached_coordinated: Dict[int, CoordinatedPlan] = {}
+        self._cached_speed_cmds: Dict[int, SpeedCommand] = {}
+        self._scheduler_running = False
+
 
     def compute(
         self,
         vehicles: List[SimVehicle],
-        stops,                          # List[LinearStop]
+        stops,
         dt: float = 0.1,
         is_rush_hour: bool = False,
         current_hour: float = 8.0,
@@ -105,51 +128,45 @@ class ControlMerger:
         """
         Tüm filo için kontrol komutlarını hesapla.
 
-        Akış:
-            1. HeadwayModel → headway durumları
-            2. PID → hold_time per vehicle (her tick)
-            3. Lookahead → hold + speed + skip (her N tick)
-            4. Merge → final komut
-            5. Safety → forward gap kontrolü
+        Stratejik döngü (her N tick):
+            Aşama 1 → ideal varış zamanları
+            Aşama 4 → cascade koordinasyon
+            Aşama 3 → enerji-optimal hız profili
 
-        Args:
-            vehicles:     Tüm araçlar
-            stops:        Rota durakları
-            dt:           Zaman adımı (sn)
-            is_rush_hour: Pik saat mi
-            current_hour: Saat (talep profili için)
+        Taktik döngü (her tick):
+            Headway metrikleri (dashboard için)
+            Aşama 2 → PID fine-tuning
+            Güvenlik → forward gap
 
         Returns:
             Her araç için ControlCommand
         """
-        # ─── Katman 1: Headway Model ───
+        # ─── Headway metrikleri (dashboard uyumluluğu) ───
         headway_states = self.headway_model.compute(vehicles, dt)
         fleet_metrics = self.headway_model.compute_fleet_metrics(headway_states)
-
-        # ─── Katman 2: PID (her tick) ───
-        at_stop_flags = {
-            v.id: v.phase in ("stopped", "doorsClosed")
-            for v in vehicles
-        }
-        pid_outputs = self.pid.compute_all(headway_states, at_stop_flags)
-        pid_map = {po.vehicle_id: po for po in pid_outputs}
-
-        # ─── Katman 3: Lookahead (her N tick, arka planda) ───
-        self._tick_counter += 1
-        if self._tick_counter >= self.lookahead_interval and not self._la_running:
-            self._tick_counter = 0
-            self._run_lookahead_async(vehicles, stops, is_rush_hour, current_hour)
-
-        # ─── Merge + Safety ───
-        commands: List[ControlCommand] = []
         headway_map = {hs.vehicle_id: hs for hs in headway_states}
 
-        for veh in vehicles:
-            pid_out = pid_map.get(veh.id)
-            la_out = self._cached_lookahead.get(veh.id)
-            hs = headway_map.get(veh.id)
+        # ─── Stratejik döngü (her N tick) ───
+        self._tick_counter += 1
+        # Scheduler hang koruması: 10s'den uzun sürerse zorla resetle
+        if self._scheduler_running and hasattr(self, '_scheduler_start_time'):
+            if time.monotonic() - self._scheduler_start_time > 10.0:
+                self._scheduler_running = False
+        if self._tick_counter >= self.lookahead_interval and not self._scheduler_running:
+            self._tick_counter = 0
+            # İlk çalışma senkron (cache boş), sonraki async
+            if self._cached_schedule is None:
+                self._run_scheduler_sync(vehicles, stops, is_rush_hour)
+            else:
+                self._run_scheduler_async(vehicles, stops, is_rush_hour)
 
-            cmd = self._merge_single(veh, pid_out, la_out, hs, fleet_metrics)
+        # ─── Her araç için komut üret ───
+        commands: List[ControlCommand] = []
+
+        for veh in vehicles:
+            cmd = self._compute_single(
+                veh, stops, headway_map, fleet_metrics, is_rush_hour,
+            )
 
             # ─── Forward Safety Override ───
             cmd = self._apply_safety(cmd, veh, vehicles)
@@ -158,50 +175,93 @@ class ControlMerger:
 
         return commands
 
-    def _merge_single(
+    def _compute_single(
         self,
         vehicle: SimVehicle,
-        pid_out: Optional[PIDOutput],
-        la_out: Optional[LookaheadDecision],
-        headway_state: Optional[HeadwayState],
+        stops,
+        headway_map: dict,
         fleet_metrics: dict,
+        is_rush_hour: bool,
     ) -> ControlCommand:
-        """Tek araç için PID + Lookahead birleştirme."""
+        """Tek araç için 4 aşama birleştirme."""
 
-        pid_hold = pid_out.hold_time if pid_out else 0.0
-        la_hold = la_out.hold_time if la_out else 0.0
-        la_speed = la_out.speed_factor if la_out else 1.0
-        la_skip = la_out.skip_stop if la_out else False
-        la_cost = la_out.cost if la_out else 0.0
+        hs = headway_map.get(vehicle.id)
 
-        # Hold time: en kısıtlayıcı kazanır
-        final_hold = max(pid_hold, la_hold)
+        # Durakta olan araçlara müdahale etme
+        if vehicle.phase in ("stopped", "doorsClosed", "blocked", "queued", "docking"):
+            return ControlCommand(
+                vehicle_id=vehicle.id,
+                hold_time=0.0,
+                speed_factor=1.0,
+                skip_stop=False,
+                source="none",
+                headway_error=hs.headway_error if hs else 0.0,
+                headway_cv=fleet_metrics.get("cv", 0.0),
+            )
 
-        # Speed factor: Lookahead varsa onu kullan
-        final_speed = la_speed if la_out and la_speed < 1.0 else 1.0
+        # ─── Aşama 1+4+3: Stratejik plan (cache'den) ───
+        coordinated = self._cached_coordinated.get(vehicle.id)
+        speed_cmd = self._cached_speed_cmds.get(vehicle.id)
+        schedule = self._cached_schedule
 
-        # Skip: sadece Lookahead önerir
-        final_skip = la_skip
+        # Stratejik speed_factor
+        strategic_speed_factor = 1.0
+        ideal_arrival = 0.0
+        current_eta = 0.0
+        overflow_risk = 0.0
+        energy_saving = 0.0
+        source = "none"
 
-        # Source belirleme
-        if la_out and (la_hold > pid_hold or la_speed < 1.0 or la_skip):
-            source = "lookahead"
-        elif pid_hold > 0:
-            source = "pid"
-        else:
-            source = "merged"
+        if coordinated and coordinated.speed_factor < 1.0:
+            strategic_speed_factor = coordinated.speed_factor
+            source = "cascade" if coordinated.conflict_resolved else "scheduler"
+
+        if speed_cmd and speed_cmd.speed_factor < strategic_speed_factor:
+            strategic_speed_factor = speed_cmd.speed_factor
+            energy_saving = speed_cmd.energy_saving
+            source = "scheduler"
+
+        # Plan bilgileri (debug)
+        if schedule:
+            for plan in schedule.plans:
+                if plan.vehicle_id == vehicle.id:
+                    ideal_arrival = plan.ideal_arrival
+                    current_eta = plan.current_eta
+                    overflow_risk = plan.overflow_risk
+                    break
+
+        # ─── Aşama 2: PID fine-tuning (her tick) ───
+        pid_adjustment = 0.0
+        if ideal_arrival > 0 and current_eta > 0:
+            pid_out = self.pid.compute_slot_timing(
+                vehicle.id, current_eta, ideal_arrival, overflow_risk,
+            )
+            # PID çıktısı: timing error magnitude
+            # Simetrik katsayılar — yavaşlatma ve hızlandırma eşit güçte
+            if pid_out.error > 0.5:
+                # Erken varacak → yavaşla
+                pid_adjustment = -0.02 * min(pid_out.error, 10.0)
+            elif pid_out.error < -0.5:
+                # Geç varacak → hızlan (aynı katsayı)
+                pid_adjustment = 0.02 * min(abs(pid_out.error), 10.0)
+
+        # ─── Final speed_factor ───
+        final_speed_factor = strategic_speed_factor + pid_adjustment
+        final_speed_factor = max(0.3, min(1.2, final_speed_factor))
 
         return ControlCommand(
             vehicle_id=vehicle.id,
-            hold_time=final_hold,
-            speed_factor=final_speed,
-            skip_stop=final_skip,
+            hold_time=0.0,
+            speed_factor=final_speed_factor,
+            skip_stop=False,
             source=source,
-            pid_hold=pid_hold,
-            lookahead_hold=la_hold,
-            headway_error=headway_state.headway_error if headway_state else 0.0,
+            pid_hold=pid_adjustment,
+            headway_error=hs.headway_error if hs else 0.0,
             headway_cv=fleet_metrics.get("cv", 0.0),
-            cost=la_cost,
+            ideal_arrival=ideal_arrival,
+            current_eta=current_eta,
+            overflow_risk=overflow_risk,
+            energy_saving=energy_saving,
         )
 
     def _apply_safety(
@@ -212,16 +272,12 @@ class ControlMerger:
     ) -> ControlCommand:
         """
         Forward safety override.
-
         Öndeki araca minimum mesafe korunur.
-        gap < min_gap ise speed_factor agresif düşürülür.
         Bu katman override edilemez.
         """
-        # Durakta olan araçlara güvenlik uygulanmaz (FSM yönetiyor)
         if vehicle.phase in ("stopped", "doorsClosed", "blocked", "queued", "docking"):
             return cmd
 
-        # Öndeki aracı bul
         leader = None
         leader_dist = float("inf")
 
@@ -236,65 +292,120 @@ class ControlMerger:
                 leader = v
 
         if leader is None or leader_dist > self.min_gap * 3:
-            return cmd  # güvenli mesafede, müdahale yok
+            return cmd
 
-        # Gap ratio: < 1 tehlikeli, > 1 güvenli
         gap_ratio = leader_dist / self.min_gap
 
         if gap_ratio < 0.3:
-            # Kritik — neredeyse çarpışma
             cmd.speed_factor = min(cmd.speed_factor, 0.1)
             cmd.source = "safety"
         elif gap_ratio < 0.6:
-            # Tehlikeli — agresif yavaşla
             cmd.speed_factor = min(cmd.speed_factor, 0.3)
             cmd.source = "safety"
         elif gap_ratio < 1.0:
-            # Dikkatli — orantılı yavaşla
             safe_factor = 0.3 + 0.7 * gap_ratio
             cmd.speed_factor = min(cmd.speed_factor, safe_factor)
-            if cmd.source != "lookahead":
+            if cmd.source not in ("scheduler", "cascade"):
                 cmd.source = "safety"
 
         return cmd
 
-    def _run_lookahead_async(
+    def _run_scheduler_core(
+        self,
+        vehicle_copies: List[SimVehicle],
+        stops,
+        is_rush_hour: bool,
+    ) -> None:
+        """Stratejik planlama: Aşama 1 + 4 + 3 çalıştır."""
+        # Aşama 1: Station Arrival Scheduler
+        schedule = self.scheduler.schedule(
+            vehicle_copies, stops, is_rush_hour,
+        )
+        self._cached_schedule = schedule
+
+        # Aşama 4: Cascade Koordinasyon
+        coordinated = self.coordinator.coordinate(
+            vehicle_copies, stops, schedule, is_rush_hour,
+        )
+        self._cached_coordinated = coordinated
+
+        # Aşama 3: Enerji-optimal hız profili
+        speed_cmds: Dict[int, SpeedCommand] = {}
+        for veh in vehicle_copies:
+            coord = coordinated.get(veh.id)
+            plan = None
+            for p in schedule.plans:
+                if p.vehicle_id == veh.id:
+                    plan = p
+                    break
+
+            if plan and plan.needs_intervention:
+                speed_cmd = self.profiler.compute(
+                    veh.id,
+                    veh.speed,
+                    plan.distance_to_stop,
+                    plan.ideal_arrival,
+                )
+                # Cascade'den gelen speed_factor ile karşılaştır
+                if coord and coord.speed_factor < speed_cmd.speed_factor:
+                    speed_cmd.speed_factor = coord.speed_factor
+                speed_cmds[veh.id] = speed_cmd
+
+        self._cached_speed_cmds = speed_cmds
+
+    def _run_scheduler_sync(
         self,
         vehicles: List[SimVehicle],
         stops,
         is_rush_hour: bool,
-        current_hour: float,
     ) -> None:
-        """Lookahead'i arka plan thread'inde çalıştır."""
-        self._la_running = True
-
-        # Araç durumlarının snapshot'ı (thread safety)
+        """Stratejik planlamayı senkron çalıştır (ilk tick için)."""
         vehicle_copies = [v.copy() for v in vehicles]
-        target_hw = self.headway_model.target_headway
+        try:
+            self._run_scheduler_core(vehicle_copies, stops, is_rush_hour)
+        except Exception:
+            pass
+
+    def _run_scheduler_async(
+        self,
+        vehicles: List[SimVehicle],
+        stops,
+        is_rush_hour: bool,
+    ) -> None:
+        """Stratejik planlamayı arka plan thread'inde çalıştır."""
+        self._scheduler_running = True
+        self._scheduler_start_time = time.monotonic()
+        vehicle_copies = [v.copy() for v in vehicles]
 
         def _worker():
             try:
-                la_decisions = self.lookahead.optimize(
-                    vehicle_copies, stops,
-                    target_headway=target_hw,
-                    is_rush_hour=is_rush_hour,
-                    current_hour=current_hour,
-                )
-                self._cached_lookahead = {d.vehicle_id: d for d in la_decisions}
-            except Exception:
-                pass
+                self._run_scheduler_core(vehicle_copies, stops, is_rush_hour)
+            except Exception as e:
+                import sys
+                print(f"[Scheduler] Background error: {e}", file=sys.stderr)
             finally:
-                self._la_running = False
+                self._scheduler_running = False
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
 
     def get_state_summary(self) -> dict:
         """Kontrolcü durumunun özeti (dashboard için)."""
+        schedule = self._cached_schedule
+        active_interventions = sum(
+            1 for p in (schedule.plans if schedule else [])
+            if p.needs_intervention
+        )
+        total_wait_saved = schedule.total_estimated_wait_saved if schedule else 0.0
+
         return {
             "tick_counter": self._tick_counter,
-            "lookahead_interval": self.lookahead_interval,
-            "cached_decisions": len(self._cached_lookahead),
+            "schedule_interval": self.lookahead_interval,
+            "active_interventions": active_interventions,
+            "total_wait_saved": round(total_wait_saved, 1),
+            "total_overflow_risk": round(
+                schedule.total_overflow_risk if schedule else 0.0, 2
+            ),
             "pid_gains": self.pid.get_gains(),
             "target_headway": self.headway_model.target_headway,
             "target_headway_min": self.headway_model.target_headway_minutes,
@@ -305,4 +416,6 @@ class ControlMerger:
         self.headway_model.reset()
         self.pid.reset()
         self._tick_counter = 0
-        self._cached_lookahead.clear()
+        self._cached_schedule = None
+        self._cached_coordinated.clear()
+        self._cached_speed_cmds.clear()
