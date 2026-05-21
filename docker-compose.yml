@@ -20,24 +20,6 @@ services:
       retries: 3
 
   # ========================
-  # IETT Canlı Veri (REST :8888)
-  # ========================
-  live-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.python
-      target: live-server
-    container_name: metrobus-live
-    ports:
-      - "8888:8888"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  # ========================
   # Dashboard (Nginx :80)
   # ========================
   dashboard:
@@ -49,5 +31,4 @@ services:
       - "3000:80"
     depends_on:
       - sim-server
-      - live-server
     restart: unless-stopped

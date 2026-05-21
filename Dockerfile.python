@@ -11,8 +11,6 @@ RUN pip install --no-cache-dir websockets numpy requests
 # Proje dosyalarını kopyala
 COPY rl_env/ rl_env/
 COPY sim_server.py .
-COPY live_server.py .
-COPY anlik_oto_konum.py .
 COPY packages/shared/src/constants/platform-entries.ts packages/shared/src/constants/platform-entries.ts
 
 # ========================================
@@ -21,10 +19,3 @@ COPY packages/shared/src/constants/platform-entries.ts packages/shared/src/const
 FROM python-base AS sim-server
 EXPOSE 8765
 CMD ["python", "-u", "sim_server.py"]
-
-# ========================================
-# Stage: Live Server
-# ========================================
-FROM python-base AS live-server
-EXPOSE 8888
-CMD ["python", "-u", "live_server.py"]
