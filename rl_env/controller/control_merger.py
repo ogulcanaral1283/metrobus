@@ -212,14 +212,19 @@ class ControlMerger:
         energy_saving = 0.0
         source = "none"
 
-        if coordinated and coordinated.speed_factor < 1.0:
+        if coordinated and coordinated.speed_factor != 1.0:
             strategic_speed_factor = coordinated.speed_factor
             source = "cascade" if coordinated.conflict_resolved else "scheduler"
 
-        if speed_cmd and speed_cmd.speed_factor < strategic_speed_factor:
-            strategic_speed_factor = speed_cmd.speed_factor
+        if speed_cmd and speed_cmd.speed_factor != 1.0:
+            # Yavaşlatma: en düşük olanı al, Hızlandırma: en yüksek olanı al
+            if speed_cmd.speed_factor < 1.0:
+                strategic_speed_factor = min(strategic_speed_factor, speed_cmd.speed_factor)
+            else:
+                strategic_speed_factor = max(strategic_speed_factor, speed_cmd.speed_factor)
             energy_saving = speed_cmd.energy_saving
-            source = "scheduler"
+            if source == "none":
+                source = "scheduler"
 
         # Plan bilgileri (debug)
         if schedule:

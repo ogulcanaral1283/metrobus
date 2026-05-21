@@ -32,7 +32,7 @@ import numpy as np
 from rl_env.config import SimConfig, SimVehicle, TrafficZone, DEFAULT_CONFIG, VEHICLE_LENGTH, DT
 from rl_env.route_data import load_route, LinearStop
 from rl_env.physics import compute_target_speed, update_vehicle_physics
-from rl_env.station_fsm import update_station_fsm
+from rl_env.station_fsm import update_station_fsm, compute_rear_free_slots, is_inside_platform_zone
 from rl_env.demand import DEFAULT_DEMAND
 from rl_env.traffic import update_traffic_zones
 from rl_env.controller.headway_model import HeadwayModel
@@ -119,10 +119,20 @@ class RouteGeometry:
         seg = self.segments[lo]
         t = (m - seg["start_meter"]) / max(seg["length"], 0.01)
 
+        # Heading: mevcut ve sonraki segment arası yumuşak geçiş
+        # Segment sonuna yaklaştıkça sonraki segment'in bearing'ine karış
+        heading = seg["bearing"]
+        if t > 0.5 and lo + 1 < len(self.segments):
+            next_bearing = self.segments[lo + 1]["bearing"]
+            # Açı farkını en kısa yoldan hesapla (0-360 wrap)
+            diff = (next_bearing - heading + 540) % 360 - 180
+            blend = (t - 0.5) * 2.0  # 0.5→1.0 arasında 0→1
+            heading = (heading + diff * blend) % 360
+
         return {
             "latitude": seg["start_lat"] + t * (seg["end_lat"] - seg["start_lat"]),
             "longitude": seg["start_lng"] + t * (seg["end_lng"] - seg["start_lng"]),
-            "heading": seg["bearing"],
+            "heading": heading,
         }
 
 
@@ -400,7 +410,7 @@ class SimManager:
                 self.traffic_zones, self.route_length,
             )
 
-            if cmd and cmd.speed_factor < 1.0:
+            if cmd and cmd.speed_factor != 1.0:
                 target_speed *= cmd.speed_factor
 
             leader = self._find_leader(veh, sorted_v)
@@ -583,6 +593,7 @@ class SimManager:
                     "source": cmd.source if cmd else "none",
                     "overflowRisk": round(cmd.overflow_risk, 2) if cmd else 0,
                     "energySaving": round(cmd.energy_saving, 2) if cmd else 0,
+                    "isInsidePlatform": is_inside_platform_zone(veh.position_meters, 20.0, self.stops[veh.next_stop_index]) if veh.next_stop_index < len(self.stops) else False,
                 },
             }
             vehicles_json.append(v_json)
@@ -622,6 +633,7 @@ class SimManager:
                 "occupiedSlots": occupied_by_stop.get(s.index, 0),
                 "approachingCount": approaching_by_stop.get(s.index, 0),
                 "queuedCount": queued_by_stop.get(s.index, 0),
+                "rearFreeSlots": compute_rear_free_slots(s, self.vehicles),
             }
             for s in self.stops
         ]
@@ -663,7 +675,7 @@ async def simulation_handler(websocket):
     print(f"[WS] Dashboard baglandi: {websocket.remote_address}")
 
     sim = SimManager(
-        vehicle_count=15,
+        vehicle_count=300,
         direction="gidis",
         start_hour=7.0,
         time_scale=5.0,

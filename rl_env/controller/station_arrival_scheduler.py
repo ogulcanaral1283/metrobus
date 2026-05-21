@@ -28,11 +28,13 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 try:
-    from ..config import SimVehicle, SimConfig
+    from ..config import SimVehicle, SimConfig, VEHICLE_LENGTH
     from ..route_data import LinearStop
+    from ..station_fsm import compute_rear_free_slots
 except ImportError:
-    from config import SimVehicle, SimConfig
+    from config import SimVehicle, SimConfig, VEHICLE_LENGTH
     from route_data import LinearStop
+    from station_fsm import compute_rear_free_slots
 
 
 # ═══════════════════════════════════════════
@@ -273,10 +275,20 @@ class StationArrivalScheduler:
         """
         Durağın slot zaman çizelgesini oluştur.
 
-        Perondaki araçların kalan dwell sürelerinden slot boşalma
-        zamanlarını hesaplar. Boş slotların boşalma zamanı = 0.
+        KRİTİK: Araçlar perona ARKADAN girer. Sadece en arkadaki
+        aracın arkasındaki slotlar fiziksel olarak erişilebilir.
+
+        Örnek: 4 slotlu peron, 3. slotta 1 araç:
+            Toplam kapasite: 4
+            Perondaki araç: 1
+            Toplam boş: 3 (slot 1, 2, 4)
+            Ama ERİŞİLEBİLİR boş: 1 (sadece slot 4 — aracın arkası)
+            Slot 1 ve 2 boş ama öndekine ulaşılamaz.
+
+        Bu fonksiyon SADECE arkadan erişilebilir slotları timeline'a
+        ekler. Böylece hız filtreleme doğru hesaplanır.
         """
-        capacity = max(stop.slot_count, 1)
+        total_capacity = max(stop.slot_count, 1)
 
         # Perondaki araçları bul
         on_platform: List[SimVehicle] = []
@@ -289,34 +301,40 @@ class StationArrivalScheduler:
         # Pozisyona göre sırala (en öndeki en yüksek metre)
         on_platform.sort(key=lambda v: v.position_meters, reverse=True)
 
+        # Arkadan erişilebilir boş slot sayısı
+        rear_free = compute_rear_free_slots(stop, vehicles)
+
+        # Dolu slotlar (perondaki araçlar)
         slots: List[Tuple[int, float, Optional[int]]] = []
 
-        for slot_id in range(capacity):
-            if slot_id < len(on_platform):
-                veh = on_platform[slot_id]
-
-                # Bu araç ne zaman peronu terk eder?
-                if veh.phase == "stopped":
-                    free_time = veh.dwell_remaining + DEPARTURE_OVERHEAD
-                elif veh.phase == "doorsClosed":
-                    free_time = veh.dwell_remaining + 2.0  # kalkış ivmesi
-                elif veh.phase == "blocked":
-                    free_time = 3.0  # tahmini — önü açılınca gider
-                elif veh.phase == "docking":
-                    dwell = estimate_dwell(stop, is_rush_hour)
-                    free_time = 2.0 + dwell + DEPARTURE_OVERHEAD  # dock + dwell + kalkış
-                else:
-                    free_time = 0.0
-
-                slots.append((slot_id, free_time, veh.id))
+        for slot_id, veh in enumerate(on_platform):
+            # Bu araç ne zaman peronu terk eder?
+            if veh.phase == "stopped":
+                free_time = veh.dwell_remaining + DEPARTURE_OVERHEAD
+            elif veh.phase == "doorsClosed":
+                free_time = veh.dwell_remaining + 2.0  # kalkış ivmesi
+            elif veh.phase == "blocked":
+                free_time = 3.0  # tahmini — önü açılınca gider
+            elif veh.phase == "docking":
+                dwell = estimate_dwell(stop, is_rush_hour)
+                free_time = 2.0 + dwell + DEPARTURE_OVERHEAD
             else:
-                # Boş slot — hemen müsait
-                slots.append((slot_id, 0.0, None))
+                free_time = 0.0
+            slots.append((slot_id, free_time, veh.id))
+
+        # Arkadan erişilebilir boş slotları ekle
+        # (Öndeki boş slotlar eklenmez — fiziksel olarak erişilemez)
+        for i in range(rear_free):
+            slot_id = len(on_platform) + i
+            slots.append((slot_id, 0.0, None))
+
+        # Efektif kapasite = perondaki araçlar + arkadan erişilebilir slotlar
+        effective_capacity = len(on_platform) + rear_free
 
         return SlotTimeline(
             stop_index=stop.index,
             stop_name=stop.name,
-            slot_count=capacity,
+            slot_count=effective_capacity,
             slots=slots,
         )
 

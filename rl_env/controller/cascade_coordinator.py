@@ -23,6 +23,7 @@ from typing import List, Optional, Dict
 try:
     from ..config import SimVehicle, SimConfig
     from ..route_data import LinearStop
+    from ..station_fsm import compute_rear_free_slots
     from .station_arrival_scheduler import (
         StationArrivalScheduler, StationSchedule, ArrivalPlan, compute_eta,
         estimate_dwell, DEPARTURE_OVERHEAD, SLOT_BUFFER_SECONDS,
@@ -30,6 +31,7 @@ try:
 except ImportError:
     from config import SimVehicle, SimConfig
     from route_data import LinearStop
+    from station_fsm import compute_rear_free_slots
     from station_arrival_scheduler import (
         StationArrivalScheduler, StationSchedule, ArrivalPlan, compute_eta,
         estimate_dwell, DEPARTURE_OVERHEAD, SLOT_BUFFER_SECONDS,
@@ -257,9 +259,19 @@ class CascadeCoordinator:
         """
         Gecikmenin bu durakta taşmaya yol açıp açmadığını kontrol et.
 
+        Fiziksel erişilebilir kapasiteyi kullanır — sadece arkadan
+        girilebilen slotlar sayılır.
+
         Returns: (causes_overflow, severity 0-1)
         """
-        capacity = max(stop.slot_count, 1)
+        # Fiziksel erişilebilir kapasite (arkadan girilebilir slotlar)
+        rear_free = compute_rear_free_slots(stop, all_vehicles)
+        on_platform = sum(
+            1 for v in all_vehicles
+            if v.next_stop_index == stop.index
+            and v.phase in ("stopped", "doorsClosed", "blocked", "docking")
+        )
+        effective_capacity = max(on_platform + rear_free, 1)
 
         # Bu durağa yaklaşan toplam araç sayısı
         approaching_count = 0
@@ -267,15 +279,8 @@ class CascadeCoordinator:
             if v.next_stop_index == stop.index and v.phase in ("cruising", "approaching"):
                 approaching_count += 1
 
-        # Perondaki araç sayısı
-        on_platform = sum(
-            1 for v in all_vehicles
-            if v.next_stop_index == stop.index
-            and v.phase in ("stopped", "doorsClosed", "blocked", "docking")
-        )
-
         total_demand = approaching_count + on_platform
-        overflow_ratio = total_demand / capacity
+        overflow_ratio = total_demand / effective_capacity
 
         if overflow_ratio <= 1.0:
             return False, 0.0

@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline, CircleMarker
 import L from 'leaflet';
 import { STATIONS_EAST, ROUTE_NETWORK, GIDIS_LANE, DONUS_LANE, PLATFORM_GEOMETRIES, GIDIS_SYNTHETIC_LANES, DONUS_SYNTHETIC_LANES, SHARED_WAY_IDS, PLATFORM_ENTRIES, STATION_SLOTS, haversineDistance, calculateBearing, moveAlongBearing, isRushHour, formatDuration, SimEngine } from '@metrobus/shared';
 import type { SimVehicle, SimState } from '@metrobus/shared';
-import { useIETTLive, HAT_COLORS } from './hooks/useIETTLive';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -138,28 +137,30 @@ function phaseColor(vehicle: SimVehicle): string {
 
 function vehicleIcon(vehicle: SimVehicle) {
     const v = vehicle as any;
-    // Live IETT modda hat rengini kullan, sim modda faz rengini
-    const c = v._iett ? (HAT_COLORS[v._iett.hatkodu] || '#2196F3') : phaseColor(vehicle);
+    const c = phaseColor(vehicle);
     const isBunched = v.isBunched || false;
     const predictive = v.predictiveDecision;
 
-    const isQueued = vehicle.phase === 'queued';
+    const isQueued = vehicle.phase === 'queued'
+        || (vehicle.phase === 'approaching' && vehicle.speed * 3.6 < 5 && !v._analytic?.isInsidePlatform);
     const isBlocked = vehicle.phase === 'blocked';
     const speedFactor = v._analytic?.speedFactor ?? 1.0;
     const isSpeedAdjusted = speedFactor < 0.95 && !isQueued && !isBlocked && !isBunched;
 
-    // Pulse class önceliği: bunching > blocked > queued > speedAdjust
+    // Pulse class önceliği: queued/blocked > bunching > speedAdjust
+    // Queued ve blocked DAIMA kendi animasyonlarını gösterir — bunching override edemez
+    // Çünkü perona giremeyen araç fiziksel durumunu açıkça göstermeli
     let pulseClass = '';
     let border = '#fff';
-    if (isBunched) {
-        pulseClass = 'bunch-pulse';
-        border = '#F44336';  // Kırmızı — yığılma
+    if (isQueued) {
+        pulseClass = 'queued-pulse';
+        border = '#CCFF00';  // Fosforlu sarı — perona giremedi, dışarıda bekliyor
     } else if (isBlocked) {
         pulseClass = 'blocked-pulse';
         border = '#E91E63';  // Pembe — peronda sıkışmış
-    } else if (isQueued) {
-        pulseClass = 'queued-pulse';
-        border = '#CCFF00';  // Fosforlu sarı — dışarıda bekliyor
+    } else if (isBunched) {
+        pulseClass = 'bunch-pulse';
+        border = '#F44336';  // Kırmızı — yığılma
     } else if (isSpeedAdjusted) {
         pulseClass = 'speed-filter-pulse';
         border = '#00BCD4';  // Cyan mavi — hız ayarı
@@ -174,15 +175,15 @@ function vehicleIcon(vehicle: SimVehicle) {
     const dirColor = vehicle.direction === 'gidis' ? '#42A5F5' : '#FFA726';
 
     // Durum gösterge ikonu (köşe badge)
-    const statusIndicator = isBunched
-        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#F44336" stroke="#fff" stroke-width="0.5"/>
-           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">B</text>`
+    const statusIndicator = isQueued
+        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#CCFF00" stroke="#333" stroke-width="0.5"/>
+           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#333" font-weight="900">Q</text>`
         : isBlocked
         ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#E91E63" stroke="#fff" stroke-width="0.5"/>
            <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">X</text>`
-        : isQueued
-        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#CCFF00" stroke="#333" stroke-width="0.5"/>
-           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#333" font-weight="900">Q</text>`
+        : isBunched
+        ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#F44336" stroke="#fff" stroke-width="0.5"/>
+           <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">B</text>`
         : isSpeedAdjusted
         ? `<circle cx="${busW - 3}" cy="3" r="3.5" fill="#00BCD4" stroke="#fff" stroke-width="0.5"/>
            <text x="${busW - 3}" y="5.5" text-anchor="middle" font-size="5" fill="#fff" font-weight="900">S</text>`
@@ -223,13 +224,11 @@ function vehicleIcon(vehicle: SimVehicle) {
                     ${statusIndicator}
                 </svg>
                 ${isQueued ? `<div style="
-                    position:absolute;top:-18px;left:50%;transform:translateX(-50%);
-                    background:#FFEB3B;color:#000;font-size:8px;font-weight:900;
-                    padding:2px 6px;border-radius:4px;white-space:nowrap;
-                    font-family:Inter,sans-serif;pointer-events:none;
-                    box-shadow:0 2px 6px rgba(0,0,0,0.5);
-                    letter-spacing:0.5px;
-                ">⏳ KUYRUKTA</div>` : ''}
+                    position:absolute;top:-4px;left:50%;transform:translateX(-50%);
+                    width:20px;height:3px;border-radius:2px;
+                    background:#FFEB3B;pointer-events:none;
+                    box-shadow:0 0 8px 2px rgba(255,235,59,0.7);
+                "></div>` : ''}
                 ${isBlocked ? `<div style="
                     position:absolute;top:-18px;left:50%;transform:translateX(-50%);
                     background:#E91E63;color:#fff;font-size:8px;font-weight:900;
@@ -252,7 +251,7 @@ function vehicleIcon(vehicle: SimVehicle) {
     });
 }
 
-function stationIcon(name: string, seq: number, isHighlight: boolean = false, slotInfo?: { occupied: number; total: number; approaching: number; queued: number; platformLen: number }) {
+function stationIcon(name: string, seq: number, isHighlight: boolean = false, slotInfo?: { occupied: number; total: number; approaching: number; queued: number; platformLen: number; rearFree: number }) {
     const dotSize = isHighlight ? 14 : 10;
     const color = isHighlight ? '#FF5722' : '#FF9800';
     const fontSize = isHighlight ? '11px' : '10px';
@@ -261,10 +260,13 @@ function stationIcon(name: string, seq: number, isHighlight: boolean = false, sl
 
     let badgeHtml = '';
     if (slotInfo && slotInfo.total > 0) {
-        const { occupied, total, approaching, queued, platformLen } = slotInfo;
-        const badgeColor = occupied >= total ? '#F44336' : occupied > 0 ? '#FF9800' : '#4CAF50';
+        const { occupied, total, approaching, queued, platformLen, rearFree } = slotInfo;
+        // Doluluk rengi: fiziksel erişilebilir kapasiteye göre
+        // rearFree = arkadan girilebilir boş slot sayısı
+        const badgeColor = rearFree === 0 && occupied > 0 ? '#F44336' : occupied > 0 ? '#FF9800' : '#4CAF50';
         const approachHtml = approaching > 0 ? `<span style="color:#64B5F6;margin-left:3px;">+${approaching}</span>` : '';
-        const queuedHtml = queued > 0 ? `<span style="color:#FFEB3B;margin-left:3px;font-weight:900;">⏳${queued}</span>` : '';
+        // Doluluk: dolu/toplam + arkadan erişilebilir boş slot
+        const rearInfo = occupied > 0 ? `<span style="color:#aaa;margin-left:2px;">(↙${rearFree})</span>` : '';
         badgeHtml = `<div style="
             margin-top:1px;padding:1px 5px;border-radius:3px;
             background:rgba(0,0,0,0.85);
@@ -273,7 +275,7 @@ function stationIcon(name: string, seq: number, isHighlight: boolean = false, sl
             display:flex;align-items:center;gap:4px;
         ">
             <span style="color:#aaa;">${platformLen}m</span>
-            <span style="color:${badgeColor};font-weight:bold;">${occupied}/${total}</span>${approachHtml}${queuedHtml}
+            <span style="color:${badgeColor};font-weight:bold;">${occupied}/${total}</span>${rearInfo}${approachHtml}
         </div>`;
     }
 
@@ -336,7 +338,7 @@ function getPhaseDetail(vehicle: SimVehicle): string {
         return '⛔ Önde Araç — Bekliyor';
     }
     if (vehicle.phase === 'queued') {
-        return `🕐 Kuyrukta (${(vehicle as any).queueWaitTime?.toFixed(1) || '0'}s)`;
+        return '🟠 Kuyrukta';
     }
     return phaseLabel[vehicle.phase] || vehicle.phase;
 }
@@ -348,42 +350,60 @@ function getPhaseDetail(vehicle: SimVehicle): string {
 function vehicleIconKey(vehicle: SimVehicle): string {
     const v = vehicle as any;
     const bunched = v.isBunched ? 1 : 0;
-    const sf = Math.round((v._analytic?.speedFactor ?? 1.0) * 20); // 0.05 hassasiyet
+    const sf = Math.round((v._analytic?.speedFactor ?? 1.0) * 20);
     return `${vehicle.phase}_${bunched}_${sf}_${vehicle.direction}`;
 }
 
-const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = ({ vehicle }) => {
+// Başlangıç ikonu — tek bir basit placeholder, gerçek ikon useEffect'te atanır
+const PLACEHOLDER_ICON = L.divIcon({ className: '', html: '<div style="width:8px;height:8px;background:#666;border-radius:50%"></div>', iconSize: [8, 8], iconAnchor: [4, 4] });
+
+const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = React.memo(({ vehicle }) => {
     const markerRef = useRef<L.Marker | null>(null);
     const lastIconKey = useRef<string>('');
 
     useEffect(() => {
         const m = markerRef.current;
         if (!m) return;
-        // Pozisyon her zaman güncelle (hafif işlem)
         m.setLatLng([vehicle.latitude, vehicle.longitude]);
-        // İkonu sadece durum değişince güncelle (ağır işlem)
+        // İkonu sadece durum değişince yeniden oluştur
         const key = vehicleIconKey(vehicle);
         if (key !== lastIconKey.current) {
             lastIconKey.current = key;
             m.setIcon(vehicleIcon(vehicle));
         }
-    }, [vehicle.latitude, vehicle.longitude, vehicle.phase, (vehicle as any).isBunched, (vehicle as any)._analytic?.speedFactor]);
+        // Heading — CSS transform ile güncelle
+        const el = m.getElement();
+        if (el) {
+            const root = el.querySelector('.vehicle-marker-root') as HTMLElement;
+            if (root) {
+                root.style.transform = `rotate(${(vehicle.heading || 0) - 90}deg)`;
+            }
+        }
+        // Tooltip — bind once, update content (DOM overhead yok)
+        const tip = `<b>${vehicle.code}</b> | ${(vehicle.speed * 3.6).toFixed(0)} km/h | ${vehicle.phase}`;
+        if (!m.getTooltip()) {
+            m.bindTooltip(tip, { direction: 'top', offset: [0, -10], opacity: 0.95 });
+        } else {
+            m.setTooltipContent(tip);
+        }
+    });
 
     return (
         <Marker
             ref={markerRef}
             position={[vehicle.latitude, vehicle.longitude]}
-            icon={vehicleIcon(vehicle)}
+            icon={PLACEHOLDER_ICON}
             eventHandlers={{}}
-        >
-            <Tooltip direction="top" offset={[0, -10]} opacity={0.95} permanent={false}>
-                <span style={{ fontWeight: 700, fontSize: '11px' }}>
-                    {vehicle.code} | {(vehicle.speed * 3.6).toFixed(0)} km/h | {getPhaseDetail(vehicle)}
-                </span>
-            </Tooltip>
-        </Marker>
+        />
     );
-};
+}, (prev, next) => {
+    // Sadece pozisyon veya durum değişince re-render
+    return prev.vehicle.latitude === next.vehicle.latitude
+        && prev.vehicle.longitude === next.vehicle.longitude
+        && prev.vehicle.phase === next.vehicle.phase
+        && (prev.vehicle as any).isBunched === (next.vehicle as any).isBunched
+        && (prev.vehicle as any)._analytic?.speedFactor === (next.vehicle as any)._analytic?.speedFactor;
+});
 
 // ==========================================
 // MAP CONTROLLER — harita referansını yakala
@@ -410,10 +430,6 @@ const App: React.FC = () => {
     const [timeScale, setTimeScale] = useState(5);
     const [mapTile, setMapTile] = useState<MapTileMode>('dark');
     const mapInstanceRef = useRef<L.Map | null>(null);
-
-    // === LIVE IETT MODE ===
-    const [liveMode, setLiveMode] = useState(true);
-    const iettLive = useIETTLive(liveMode, 2000);
 
     // === TRAINING MODE ===
     const [trainingMode, setTrainingMode] = useState(false);
@@ -537,12 +553,10 @@ const App: React.FC = () => {
         };
     }, [trainingMode]);
 
-    const vehicles = liveMode
-        ? iettLive.vehicles
-        : [
-            ...(simState.gidis?.vehicles ?? []),
-            ...(simState.donus?.vehicles ?? []),
-        ];
+    const vehicles = [
+        ...(simState.gidis?.vehicles ?? []),
+        ...(simState.donus?.vehicles ?? []),
+    ];
 
     const getEngine = (dir: 'gidis' | 'donus') => dir === 'gidis' ? gidisRef.current : donusRef.current;
 
@@ -582,15 +596,6 @@ const App: React.FC = () => {
         return () => document.removeEventListener('click', handler);
     }, []);
 
-    // Per-vehicle komutlar
-    const cmdStop = (v: SimVehicle) => getEngine(v.direction)?.stopVehicle(v.id);
-    const cmdSlow = (v: SimVehicle) => getEngine(v.direction)?.slowVehicle(v.id);
-    const cmdRelease = (v: SimVehicle) => getEngine(v.direction)?.releaseVehicle(v.id);
-    const cmdAddVehicle = (dir: 'gidis' | 'donus') => getEngine(dir)?.spawnVehicle();
-    const cmdRemoveVehicle = (v: SimVehicle) => {
-        getEngine(v.direction)?.removeVehicle(v.id);
-        if (selectedVehicleKey?.id === v.id) setSelectedVehicleKey(null);
-    };
 
 
     return (
@@ -600,41 +605,9 @@ const App: React.FC = () => {
                 <div className="sidebar-header">
                     <h1>🚍 Metrobüs</h1>
                     <span className="badge" style={{
-                        background: trainingMode ? 'linear-gradient(135deg,#00BCD4,#0097A7)' : liveMode ? 'linear-gradient(135deg,#f44336,#e91e63)' : 'linear-gradient(135deg,#2196F3,#1976D2)',
-                    }}>{trainingMode ? 'ANALITIK' : liveMode ? 'CANLI' : 'SIM'}</span>
+                        background: 'linear-gradient(135deg,#00BCD4,#0097A7)',
+                    }}>ANALITIK</span>
                 </div>
-
-                {/* Mod Toggle */}
-                <div style={{ padding: '0 16px 8px', display: 'flex', gap: '4px' }}>
-                    <button
-                        onClick={() => { setLiveMode(true); setTrainingMode(false); }}
-                        style={{
-                            flex: 1, padding: '8px', border: 'none', borderRadius: '6px',
-                            background: liveMode ? '#F44336' : '#37474F', color: '#fff',
-                            cursor: 'pointer', fontSize: '11px', fontWeight: 700,
-                            transition: 'all 0.2s',
-                        }}
-                    >🔴 CANLI IETT</button>
-                    <button
-                        onClick={() => setLiveMode(false)}
-                        style={{
-                            flex: 1, padding: '8px', border: 'none', borderRadius: '6px',
-                            background: !liveMode && !trainingMode ? '#2196F3' : '#37474F', color: '#fff',
-                            cursor: 'pointer', fontSize: '11px', fontWeight: 700,
-                            transition: 'all 0.2s',
-                        }}
-                    >🔵 SİMÜLASYON</button>
-                </div>
-
-                {/* Live Mode Info */}
-                {liveMode && (
-                    <div style={{ padding: '0 16px 8px', fontSize: '10px', color: iettLive.connected ? '#4CAF50' : '#F44336' }}>
-                        {iettLive.connected
-                            ? `● Bağlı — Son: ${iettLive.lastUpdate} | API: ${iettLive.apiCalls * 7} çağrı`
-                            : `○ ${iettLive.error || 'Bağlanıyor...'} (live_server.py çalışıyor mu?)`
-                        }
-                    </div>
-                )}
 
                 {/* İstatistikler */}
                 <div className="stats-grid">
@@ -656,31 +629,9 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Hat Dağılımı — sadece live modda */}
-                {liveMode && vehicles.length > 0 && (
-                    <div style={{ padding: '0 16px 8px' }}>
-                        <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>Hat Dağılımı</div>
-                        {Object.entries(
-                            vehicles.reduce<Record<string, number>>((acc, v) => {
-                                const hat = (v as any)._iett?.hatkodu || '?';
-                                acc[hat] = (acc[hat] || 0) + 1;
-                                return acc;
-                            }, {})
-                        ).sort((a, b) => b[1] - a[1]).map(([hat, cnt]) => (
-                            <div key={hat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '1px 0' }}>
-                                <span style={{ color: HAT_COLORS[hat] || '#888', fontWeight: 600 }}>{hat}</span>
-                                <span style={{ color: '#fff', fontWeight: 700 }}>{cnt}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
                 {/* Rush Hour durumu */}
                 <div className={`rush-indicator ${simState.gidis?.isRushHour ? 'active' : ''}`}>
-                    {liveMode
-                        ? (iettLive.cached ? '📦 Cache verisi' : '🌐 Taze IETT verisi')
-                        : (simState.gidis?.isRushHour ? '🔴 PİK SAAT — Yoğun trafik' : '🟢 Normal trafik akışı')
-                    }
+                    {simState.gidis?.isRushHour ? '🔴 PİK SAAT — Yoğun trafik' : '🟢 Normal trafik akışı'}
                 </div>
 
                 {/* ===== ANALITIK MOTOR TOGGLE ===== */}
@@ -688,7 +639,7 @@ const App: React.FC = () => {
                     <button
                         className={`btn ${trainingMode ? 'btn-green' : ''}`}
                         style={{ width: '100%', fontSize: '12px', padding: '8px', background: trainingMode ? '#00BCD4' : '#37474F' }}
-                        onClick={() => { const next = !trainingMode; setTrainingMode(next); if (next) setLiveMode(false); }}
+                        onClick={() => setTrainingMode(prev => !prev)}
                     >
                         {trainingMode ? '⚙ Analitik Motor AKTIF' : '⚙ Analitik Motor'}
                     </button>
@@ -965,7 +916,7 @@ const App: React.FC = () => {
                     <h2>Araçlar ({vehicles.length})</h2>
                 </div>
                 <div className="vehicle-list">
-                    {vehicles.map(v => (
+                    {vehicles.slice(0, 30).map(v => (
                         <div
                             key={`${v.direction}-${v.id}`}
                             className={`vehicle-card ${selectedVehicleKey?.id === v.id && selectedVehicleKey?.direction === v.direction ? 'selected' : ''}`}
@@ -991,11 +942,10 @@ const App: React.FC = () => {
                                     {v.manualOverride !== null && <span style={{ color: '#F44336', fontSize: '10px', marginLeft: '4px' }}>⬤ MANUEL</span>}
                                 </div>
                                 {v.phase === 'queued' && <div style={{
-                                    background: '#FFEB3B', color: '#000', fontSize: '10px',
-                                    fontWeight: 900, padding: '2px 6px', borderRadius: '3px',
-                                    marginTop: '3px', textAlign: 'center',
+                                    background: '#FFEB3B', height: '3px', borderRadius: '2px',
+                                    marginTop: '3px',
                                     animation: 'queuedPulse 0.7s ease-in-out infinite',
-                                }}>⏳ PERON DOLU — KUYRUKTA BEKLİYOR</div>}
+                                }}/>}
                                 {v.phase === 'blocked' && <div style={{
                                     background: '#E91E63', color: '#fff', fontSize: '10px',
                                     fontWeight: 900, padding: '2px 6px', borderRadius: '3px',
@@ -1129,7 +1079,7 @@ const App: React.FC = () => {
                             icon={stationIcon(s.name, s.sequenceOrder, i % 5 === 0, (() => {
                                 const ws = trainingData?.stops?.[i];
                                 if (!ws) return undefined;
-                                return { occupied: ws.occupiedSlots ?? 0, total: ws.slotCount ?? 0, approaching: ws.approachingCount ?? 0, queued: ws.queuedCount ?? 0, platformLen: ws.platformLengthMeters ?? 0 };
+                                return { occupied: ws.occupiedSlots ?? 0, total: ws.slotCount ?? 0, approaching: ws.approachingCount ?? 0, queued: ws.queuedCount ?? 0, platformLen: ws.platformLengthMeters ?? 0, rearFree: ws.rearFreeSlots ?? 0 };
                             })())}
                         >
                             <Popup>
@@ -1146,9 +1096,10 @@ const App: React.FC = () => {
                                         const slotCount = wsStop?.slotCount ?? slot?.slotCount;
                                         const occupied = wsStop?.occupiedSlots ?? 0;
                                         const approaching = wsStop?.approachingCount ?? 0;
+                                        const rearFree = wsStop?.rearFreeSlots ?? 0;
                                         const stoppedHere = vehicles.filter(v => v.phase === 'stopped' && Math.abs(v.latitude - s.latitude) < 0.001 && Math.abs(v.longitude - s.longitude) < 0.003);
                                         const queuingHere = vehicles.filter(v => (v as any).isQueuing && Math.abs(v.latitude - s.latitude) < 0.002 && Math.abs(v.longitude - s.longitude) < 0.005);
-                                        const occupancyColor = slotCount && occupied >= slotCount ? '#F44336' : occupied > 0 ? '#FF9800' : '#4CAF50';
+                                        const occupancyColor = rearFree === 0 && occupied > 0 ? '#F44336' : occupied > 0 ? '#FF9800' : '#4CAF50';
                                         return (
                                             <>
                                                 {platformLen != null && <div style={{ fontSize: '11px', marginTop: '4px', color: '#76FF03' }}>
@@ -1158,22 +1109,20 @@ const App: React.FC = () => {
                                                     <span style={{ color: occupancyColor, fontWeight: 'bold' }}>
                                                         Doluluk: {occupied}/{slotCount}
                                                     </span>
+                                                    <span style={{ color: '#aaa', marginLeft: '6px', fontSize: '10px' }}>
+                                                        (girilebilir: {rearFree})
+                                                    </span>
                                                                     {approaching > 0 && <span style={{ color: '#2196F3', marginLeft: '6px' }}>
                                                         +{approaching} yaklaşan
                                                     </span>}
                                                 </div>}
                                                 {(wsStop?.queuedCount ?? 0) > 0 && <div style={{
-                                                    fontSize: '12px', marginTop: '4px', padding: '3px 8px',
-                                                    background: '#FFEB3B', color: '#000', borderRadius: '4px',
-                                                    fontWeight: 900, textAlign: 'center',
-                                                }}>
-                                                    ⏳ KUYRUKTA: {wsStop.queuedCount} araç bekliyor!
-                                                </div>}
+                                                    marginTop: '4px', height: '3px', borderRadius: '2px',
+                                                    background: '#FFEB3B',
+                                                    animation: 'queuedPulse 0.7s ease-in-out infinite',
+                                                }}/>}
                                                 {stoppedHere.length > 0 && !wsStop && <div style={{ fontSize: '11px', marginTop: '2px', color: '#2196F3' }}>
                                                     Durakta: {stoppedHere.length} arac
-                                                </div>}
-                                                {queuingHere.length > 0 && <div style={{ fontSize: '11px', marginTop: '2px', color: '#E91E63' }}>
-                                                    Kuyrukta: {queuingHere.length} arac
                                                 </div>}
                                             </>
                                         );
@@ -1309,11 +1258,10 @@ const App: React.FC = () => {
                                     {/* Kuyruk Durumu */}
                                     {(activeVehicle as any).isQueuing && (
                                         <div style={{
-                                            marginTop: '4px', padding: '4px 8px', borderRadius: '4px',
-                                            background: 'rgba(255,152,0,0.15)', fontSize: '11px', color: '#FF9800',
-                                        }}>
-                                            ⏳ Kuyrukta bekliyor — {(activeVehicle as any).queueWaitTime?.toFixed(1)}s
-                                        </div>
+                                            marginTop: '4px', height: '3px', borderRadius: '2px',
+                                            background: '#FFEB3B',
+                                            animation: 'queuedPulse 0.7s ease-in-out infinite',
+                                        }}/>
                                     )}
                                 </div>
                             )}
@@ -1399,30 +1347,6 @@ const App: React.FC = () => {
                                 )}
                             </div>
 
-                            {activeVehicle.manualOverride !== null && (
-                                <div style={{ background: 'rgba(244,67,54,0.15)', padding: '6px 10px', borderRadius: '6px', color: '#F44336', fontSize: '12px', marginTop: '4px' }}>
-                                    ⚠️ Manuel kontrol aktif — hedef hız: {activeVehicle.manualOverride === 0 ? 'DURDURULDU' : `${(activeVehicle.manualOverride * 3.6).toFixed(0)} km/h`}
-                                </div>
-                            )}
-                        </div>
-                        {/* Araç kontrol butonları */}
-                        <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                            <button onClick={() => cmdStop(activeVehicle)}
-                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#F44336', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
-                                ⏹ Durdur
-                            </button>
-                            <button onClick={() => cmdSlow(activeVehicle)}
-                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#FF9800', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
-                                🐌 Yavaşlat
-                            </button>
-                            <button onClick={() => cmdRelease(activeVehicle)}
-                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#4CAF50', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
-                                ▶️ Serbest
-                            </button>
-                            <button onClick={() => cmdRemoveVehicle(activeVehicle)}
-                                style={{ flex: 1, padding: '8px 4px', border: 'none', borderRadius: '6px', background: '#616161', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
-                                🗑️ Kaldır
-                            </button>
                         </div>
                     </div>
                 )}
