@@ -675,7 +675,7 @@ async def simulation_handler(websocket):
     print(f"[WS] Dashboard baglandi: {websocket.remote_address}")
 
     sim = SimManager(
-        vehicle_count=300,
+        vehicle_count=30,
         direction="gidis",
         start_hour=7.0,
         time_scale=5.0,
