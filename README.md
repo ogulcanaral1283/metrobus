@@ -147,6 +147,3 @@ OpenStreetMap Overpass API'den alınmış:
 - **Servis:** Nginx (Docker)
 - **Altyapı:** Docker Compose
 
-## Lisans
-
-MIT
