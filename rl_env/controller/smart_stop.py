@@ -140,7 +140,7 @@ class SmartStop:
         interface: StopInterface,
         approach_distance: float = 150.0,
         comfort_braking: float = 2.0,
-        max_speed: float = 14.0,
+        max_speed: float = 25.0,
     ) -> None:
         self.stop = stop
         self.zone_start = zone_start            # önceki durağın pozisyonu (m)
@@ -547,7 +547,7 @@ def build_smart_stops(
     interface: StopInterface,
     approach_distance: float = 150.0,
     comfort_braking: float = 2.0,
-    max_speed: float = 14.0,
+    max_speed: float = 25.0,
 ) -> List[SmartStop]:
     """
     Bir rota için SmartStop listesi oluştur.

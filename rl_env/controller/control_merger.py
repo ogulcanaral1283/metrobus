@@ -118,7 +118,7 @@ class ControlMerger:
                 interface=self._interface,
                 approach_distance=150.0,
                 comfort_braking=2.0,
-                max_speed=14.0,
+                max_speed=25.0,
             )
             self._stops_initialized = True
 

@@ -31,7 +31,7 @@ class SimConfig:
     max_acceleration: float = 1.0       # m/s²
     comfort_braking: float = 2.0        # m/s²
     emergency_braking: float = 4.5      # m/s²
-    max_speed: float = 14.0             # m/s (~50 km/h)
+    max_speed: float = 25.0             # m/s (90 km/h — maksimum sınır)
 
     # === IDM ===
     idm_min_gap: float = 2.0            # metre
