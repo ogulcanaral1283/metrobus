@@ -1,154 +1,152 @@
-# 🚍 Istanbul Metrobus Smart Traffic Management System
+# Istanbul Metrobus — Akıllı Durak-Slot Kontrol Sistemi
 
-A real-time intelligent traffic management system for Istanbul's Metrobus rapid transit line. The system monitors vehicle positions, headway distances, and station congestion levels, providing live driver guidance commands to optimize fleet performance and reduce bus bunching.
+İstanbul metrobüs hattı (52 km, 45 durak) için gerçek zamanlı simülasyon ve analitik hız kontrol sistemi.
 
-## 🎯 Problem
+## Problem
 
-Bus bunching — where vehicles cluster together leaving large gaps in service — is a chronic issue on Istanbul's 52 km Metrobus corridor serving 800,000+ daily passengers. This system provides real-time driver instructions via in-vehicle HUD displays to maintain optimal headway spacing.
+Metrobüs hattında *bus bunching* — araçların kümelenerek büyük boşluklar oluşturması — kronik bir sorundur. Geleneksel headway düzeltme yaklaşımları semptoma odaklanır. Bu sistem problemi kaynağında çözer: **durak slot taşmasını önleyerek yığılmayı engeller**.
 
-## 🏗️ Architecture
+## Mimari
 
 ```
-Data Sources → Ingestion Layer → Real-Time Engine → Decision Engine → Driver HUD
-    GPS           Kafka           Headway Calc        Rule Engine      WebSocket
-    IETT API                      Bunching Detection   ML Prediction    React UI
-    Traffic API                   Congestion Analysis  Command Gen
+sim_server.py (Python WebSocket :8765)
+    │
+    ├── Fizik Motoru (20 Hz)
+    │       StationFSM  — araç faz geçişleri
+    │       ForwardSafety — çarpışma önleme
+    │
+    └── Analitik Kontrol Motoru
+            HeadwayModel    — ODE tabanlı headway dinamiği (metrik)
+            SmartStop × 45  — durak bölgesi yöneticisi
+            StopInterface   — duraklar arası koordinasyon
+
+packages/dashboard (React + Nginx :3000)
+    WebSocket ile sim_server'a bağlanır
+    Leaflet harita, araç izleme, motor inceleme paneli
 ```
 
-## 📦 Packages
+## Kontrol Motoru — Matematiksel Özet
 
-| Package | Description |
-|---------|-------------|
-| `shared` | Common types, constants, utilities, station & route data |
-| `data-ingestion` | GPS, IETT API, and traffic data collectors |
-| `realtime-engine` | Vehicle tracking, headway calculation, congestion analysis |
-| `decision-engine` | Rule-based decision engine with approach optimization |
-| `ml-service` | Machine learning prediction service (Python) |
-| `api-gateway` | REST API + WebSocket server |
-| `driver-hud` | In-vehicle driver heads-up display |
-| `dashboard` | Management & monitoring dashboard with live map |
+Her durak kendi bölgesindeki araçlar (~1-2) için bağımsız karar alır.
 
-## 🗺️ Route Data
+**Kinematik ETA** (iki fazlı):
+```
+d > d_approach:  ETA = (d - d_approach)/v  +  d_approach / (v_entry/2)
+d ≤ d_approach:  ETA = d / (v_entry/2)
+v_entry = min(v, sqrt(2 · a_c · d_approach))
+```
 
-The route geometry and station positions are sourced directly from **OpenStreetMap** via the Overpass API:
+**Gecikme bütçesi:**
+```
+d_eff = d - v · 7.5          (hesaplama + iletişim + sürücü + araç tepkisi)
+```
 
-- **45 stations** from Beylikdüzü (TÜYAP) to Söğütlüçeşme
-- **Eastbound route** (34G Beylikdüzü → Söğütlüçeşme): 1,065 coordinate points
-- **Westbound route** (34G Söğütlüçeşme → Beylikdüzü): 1,047 coordinate points
-- **99 verified stop positions** from OSM bus stop nodes
+**Kost-Fayda Analizi:**
+```
+queue_time     = t_ideal - ETA
+cascade_cost   = queue_time × N_follow × 0.7
+downstream_cost = P_down × 8.0
+intervention_cost = queue_time
 
-## ⚡ Quick Start
+net_benefit > 0  →  YAVAŞLA
+```
 
-### Prerequisites
+**Hız çarpanı:**
+```
+λ = clamp(v_needed / v_max, 0.3, 1.0)
+```
 
-- Node.js >= 20.0.0
-- Docker & Docker Compose (for full stack)
-- Python >= 3.10 (for ML service)
+**Downstream lookahead:**
+```
+P_down(s) = congestion(s+1)·1.0 + congestion(s+2)·0.6
+```
 
-### Installation
+## Hesaplama Karmaşıklığı
+
+Her simülasyon tick'inde:
+
+| Katman | İşlem |
+|--------|-------|
+| Headway metrikleri | O(N log N) — pozisyon sıralama |
+| SmartStop filtreleme | O(S × N) — hafif pozisyon karşılaştırması |
+| Kost-fayda analizi | O(S × 2) — bölge başına ~2 araç |
+
+S = durak sayısı (45), N = araç sayısı. N arttıkça ağır hesap sabit kalır.
+
+## Paketler
+
+| Paket | Açıklama |
+|-------|----------|
+| `sim_server.py` | Simülasyon ve kontrol motoru (Python WebSocket) |
+| `rl_env/controller/` | SmartStop, HeadwayModel, StopInterface, ControlMerger |
+| `rl_env/station_fsm.py` | Araç faz makinesi (cruising → approaching → docking → ...) |
+| `packages/shared/` | Rota geometrisi, durak koordinatları, OSM verileri |
+| `packages/dashboard/` | React izleme paneli |
+
+## Hızlı Başlangıç
+
+### Docker (önerilen)
 
 ```bash
-# Clone the repo
 git clone https://github.com/ogulcanaral1283/metrobus.git
 cd metrobus
+docker compose up
+```
 
-# Install dependencies
+- Dashboard: http://localhost:3000
+- WebSocket: ws://localhost:8765
+
+### Geliştirme
+
+```bash
+# Simülasyon sunucusu
+python sim_server.py
+
+# Dashboard (ayrı terminalde)
+cd packages/dashboard
 npm install
-
-# Set up environment
-cp .env.example .env
-# Edit .env with your configuration
-
-# Start infrastructure services
-docker-compose up -d
-
-# Start all dev servers
 npm run dev
 ```
 
-### Dashboard Only
-
-```bash
-# Run just the dashboard with live map
-npm run dev:dashboard
-```
-
-### Vehicle Simulation
-
-```bash
-# Simulate vehicles on the route
-npm run dev:simulate
-```
-
-### Refresh Route Data from OSM
-
-```bash
-# Fetch latest route geometry from OpenStreetMap
-npx tsx scripts/fetch-route-osrm.ts
-```
-
-## 📊 Decision Engine Commands
-
-| Command | Trigger | Action |
-|---------|---------|--------|
-| 🐢 SLOW DOWN | Leading vehicle < 200m ahead | Reduce speed by 30% |
-| 🚀 EXPRESS | Following vehicle > 3min behind | Skip station stop |
-| ⚠️ CAUTION | Station congestion score > 80 | Approach with caution |
-| ⏩ SPEED UP | > 5min behind schedule | Increase speed to catch up |
-| ✅ NORMAL | All metrics within range | Standard operation |
-
-## 🛠️ Tech Stack
-
-- **Backend:** Node.js + TypeScript (monorepo with npm workspaces)
-- **Messaging:** Apache Kafka
-- **Database:** TimescaleDB (PostgreSQL)
-- **Cache:** Redis
-- **ML:** Python + scikit-learn
-- **Frontend:** React 18 + Vite
-- **Maps:** OpenStreetMap + Leaflet + react-leaflet
-- **Real-time:** Socket.IO (WebSocket)
-- **Infrastructure:** Docker + Docker Compose
-
-## 📁 Project Structure
+## Proje Yapısı
 
 ```
 metrobus/
+├── sim_server.py               # Ana simülasyon + WS sunucusu
+├── rl_env/
+│   ├── config.py               # SimVehicle, sabitler
+│   ├── route_data.py           # LinearStop, rota yapıları
+│   ├── station_fsm.py          # Araç faz makinesi
+│   └── controller/
+│       ├── smart_stop.py       # Durak bölgesi kontrol motoru
+│       ├── stop_interface.py   # Duraklar arası iletişim
+│       ├── control_merger.py   # Komut birleştirici
+│       ├── headway_model.py    # Headway ODE modeli
+│       ├── pid_controller.py   # Stub (aktif değil)
+│       └── station_arrival_scheduler.py  # ETA / dwell yardımcıları
 ├── packages/
-│   ├── shared/             # Common types, station data, route geometry
-│   ├── data-ingestion/     # Data collection service
-│   ├── realtime-engine/    # Real-time processing engine
-│   ├── decision-engine/    # Rule-based decision engine
-│   ├── ml-service/         # ML prediction service (Python)
-│   ├── api-gateway/        # API server
-│   ├── driver-hud/         # Driver HUD interface
-│   └── dashboard/          # Management & monitoring dashboard
-├── infrastructure/         # Docker & database configs
-├── scripts/                # Route data fetch & vehicle simulation
-├── docs/                   # Architecture & decision rule docs
-└── tsconfig.json           # Root TypeScript config
+│   ├── shared/                 # Rota geometrisi, durak verileri
+│   └── dashboard/              # React dashboard
+├── Dockerfile                  # Dashboard image (Node → Nginx)
+├── Dockerfile.python           # sim_server image
+└── docker-compose.yml          # sim-server :8765 + dashboard :3000
 ```
 
-## 🚀 Deployment
+## Rota Verisi
 
-### Production Build
+OpenStreetMap Overpass API'den alınmış:
 
-```bash
-npm -w packages/dashboard run build
-```
+- **45 durak** — Beylikdüzü (TÜYAP) → Söğütlüçeşme
+- **Hat uzunluğu** ~25 km (lineerleştirilmiş)
+- Gidiş + dönüş yönleri
 
-### Serve with Nginx
+## Tech Stack
 
-```bash
-sudo cp -r packages/dashboard/dist/* /var/www/html/
-sudo systemctl restart nginx
-```
+- **Simülasyon:** Python 3.11, asyncio, websockets, numpy
+- **Frontend:** React 18, Vite, Leaflet, recharts
+- **Servis:** Nginx (Docker)
+- **Altyapı:** Docker Compose
 
-### Serve with Vite Preview
-
-```bash
-npm -w packages/dashboard run preview -- --host 0.0.0.0
-```
-
-## 📄 License
+## Lisans
 
 MIT
