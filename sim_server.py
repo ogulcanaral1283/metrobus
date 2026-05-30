@@ -807,7 +807,7 @@ class SimManager:
 
 WS_PORT = 8765
 SIM_TICK = 0.05       # 50ms — fizik motoru her zaman 20 Hz çalışır
-WS_SEND_INTERVAL = 0.2  # 200ms = 5 FPS dashboard güncellemesi (RAM dostu)
+WS_SEND_INTERVAL = 0.1  # 100ms = 10 FPS dashboard güncellemesi
 
 
 async def simulation_handler(websocket):
