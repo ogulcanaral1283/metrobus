@@ -1,35 +1,36 @@
 """
-Durak-Slot Merkezli Akıllı Kontrol Motoru — 4 Aşamalı Sistem
+SmartStop Tabanlı Akıllı Kontrol Motoru
+========================================
 
-Aşama 1: StationArrivalScheduler — Durak varış zamanlaması (slot çizelgesi)
-Aşama 2: PIDController           — Slot-timing error tabanlı PID düzeltme
-Aşama 3: SpeedProfiler           — Enerji-optimal hız profili
-Aşama 4: CascadeCoordinator      — Çok-duraklı cascade propagasyon
+Mimari:
+  StopInterface    — Duraklar arası iletişim katmanı (paylaşımlı durum)
+  SmartStop        — Tek durak bölgesi yöneticisi (O(1-2) araç/tick)
+  ControlMerger    — SmartStop orchestrator + forward safety
 
 Destek:
-  HeadwayModel — Headway dinamiği (metrik + dashboard)
-
-Birleştirme: ControlMerger — 4 aşama + güvenlik → final komut
+  HeadwayModel     — Headway dinamiği (yalnızca metrik / dashboard)
+  PIDController    — Yedek (geriye uyumluluk)
 """
 
 from .headway_model import HeadwayModel, HeadwayState
 from .pid_controller import PIDController
-from .station_arrival_scheduler import StationArrivalScheduler, ArrivalPlan, StationSchedule
-from .speed_profile import SpeedProfiler, SpeedCommand
-from .cascade_coordinator import CascadeCoordinator, CoordinatedPlan
+from .stop_interface import StopInterface, StopZoneState
+from .smart_stop import SmartStop, SpeedRecommendation, build_smart_stops
 from .control_merger import ControlMerger, ControlCommand
 
 __all__ = [
+    # Headway (metrik)
     "HeadwayModel",
     "HeadwayState",
+    # PID (yedek)
     "PIDController",
-    "StationArrivalScheduler",
-    "ArrivalPlan",
-    "StationSchedule",
-    "SpeedProfiler",
-    "SpeedCommand",
-    "CascadeCoordinator",
-    "CoordinatedPlan",
+    # SmartStop sistemi
+    "StopInterface",
+    "StopZoneState",
+    "SmartStop",
+    "SpeedRecommendation",
+    "build_smart_stops",
+    # Kontrol
     "ControlMerger",
     "ControlCommand",
 ]

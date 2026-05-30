@@ -250,7 +250,6 @@ def update_station_fsm(
     use_fixed_dwell: bool = False,
     fixed_dwell_seconds: float = 15.0,
     rng: Optional[np.random.Generator] = None,
-    demand_profile=None,
     current_hour: float = 8.0,
 ) -> None:
     """
@@ -330,7 +329,7 @@ def update_station_fsm(
             dwell = _compute_realistic_dwell(
                 next_stop, config, is_rush_hour, rng,
                 use_fixed_dwell, fixed_dwell_seconds,
-                demand_profile, current_hour,
+                current_hour,
             )
             dwell += vehicle.holding_extra
             vehicle.holding_extra = 0.0
@@ -359,7 +358,7 @@ def update_station_fsm(
                     dwell = _compute_realistic_dwell(
                         next_stop, config, is_rush_hour, rng,
                         use_fixed_dwell, fixed_dwell_seconds,
-                        demand_profile, current_hour,
+                        current_hour,
                     )
                     dwell += vehicle.holding_extra
                     vehicle.holding_extra = 0.0
@@ -451,7 +450,7 @@ def update_station_fsm(
                 dwell = _compute_realistic_dwell(
                     next_stop, config, is_rush_hour, rng,
                     use_fixed_dwell, fixed_dwell_seconds,
-                    demand_profile, current_hour,
+                    current_hour,
                 )
                 dwell += vehicle.holding_extra
                 vehicle.holding_extra = 0.0
@@ -506,7 +505,7 @@ def update_station_fsm(
             dwell = _compute_realistic_dwell(
                 next_stop, config, is_rush_hour, rng,
                 use_fixed_dwell, fixed_dwell_seconds,
-                demand_profile, current_hour,
+                current_hour,
             )
             dwell += vehicle.holding_extra
             vehicle.holding_extra = 0.0
@@ -616,34 +615,6 @@ def update_station_fsm(
 # Dwell Time Hesaplama
 # ============================================
 
-def _compute_passenger_load(
-    stop: LinearStop,
-    is_rush_hour: bool,
-    rng: np.random.Generator,
-    demand_profile=None,
-    current_hour: float = 8.0,
-) -> int:
-    """Duraktaki yolcu sayisini hesapla."""
-    if demand_profile is not None:
-        return demand_profile.get_passenger_count(
-            stop.name, current_hour, rng=rng
-        )
-
-    base = 5 + int(rng.integers(0, 15))
-    rush_multiplier = 2.5 if is_rush_hour else 1.0
-    center_bonus = 1.3 if 10 < stop.index < 30 else 1.0
-    max_buses = compute_max_buses_at_stop(stop)
-    platform_bonus = 1.0 + (max_buses - 1) * 0.15
-
-    return round(base * rush_multiplier * center_bonus * platform_bonus)
-
-
-def _compute_dwell_time(passenger_count: int, config: SimConfig) -> float:
-    """Dwell suresi hesapla."""
-    raw = config.door_time + passenger_count * config.per_passenger_time
-    return max(config.min_dwell_time, min(config.max_dwell_time, raw))
-
-
 def _compute_realistic_dwell(
     stop: LinearStop,
     config: SimConfig,
@@ -651,35 +622,14 @@ def _compute_realistic_dwell(
     rng: np.random.Generator,
     use_fixed_dwell: bool = False,
     fixed_dwell_seconds: float = 15.0,
-    demand_profile=None,
     current_hour: float = 8.0,
 ) -> float:
     """
-    Gerçekçi stokastik dwell süresi (15-30 saniye aralığında).
+    Dwell süresi (15-30 saniye aralığında).
+    Hafif rastgelelik ile sabit tabanlı hesaplama.
     """
     if use_fixed_dwell:
         return fixed_dwell_seconds
 
-    passenger_count = _compute_passenger_load(
-        stop, is_rush_hour, rng,
-        demand_profile=demand_profile,
-        current_hour=current_hour,
-    )
-    base_dwell = _compute_dwell_time(passenger_count, config)
-
-    if is_rush_hour:
-        base_dwell *= 1.5
-
-    extra = 0.0
-    if rng.random() < 0.08:
-        extra += rng.uniform(5.0, 10.0)
-    if rng.random() < 0.05:
-        extra += rng.uniform(3.0, 6.0)
-    crowd_prob = 0.15 if is_rush_hour else 0.03
-    if rng.random() < crowd_prob:
-        extra += rng.uniform(2.0, 5.0)
-    if rng.random() < 0.03:
-        extra += rng.uniform(2.0, 4.0)
-
-    total = base_dwell + extra
-    return max(15.0, min(30.0, total))
+    base_dwell = config.min_dwell_time + rng.uniform(0.0, config.max_dwell_time - config.min_dwell_time)
+    return max(config.min_dwell_time, min(config.max_dwell_time, base_dwell))

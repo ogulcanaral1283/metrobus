@@ -329,6 +329,8 @@ body {
     bottom: 24px;
     right: 24px;
     width: 300px;
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
     background: rgba(17, 24, 39, 0.95);
     backdrop-filter: blur(16px);
     border: 1px solid var(--border);

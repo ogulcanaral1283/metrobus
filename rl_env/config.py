@@ -39,8 +39,6 @@ class SimConfig:
     idm_delta: int = 4                  # IDM delta üssü
 
     # === Durak ===
-    door_time: float = 5.0              # saniye
-    per_passenger_time: float = 1.5     # saniye/yolcu
     min_dwell_time: float = 15.0        # saniye
     max_dwell_time: float = 30.0        # saniye
     approach_distance: float = 150.0    # metre
@@ -78,6 +76,13 @@ class SimVehicle:
     is_queuing: bool = False         # kuyrukta mı (durak dolu)
     slot_meter_position: float = 0.0 # perondaki atanmış pozisyon
 
+    # === Uçtan uca süre takibi ===
+    trip_start_time: float = 0.0        # sefere başladığı sim_time
+    trip_total_queue_time: float = 0.0   # toplam kuyrukta bekleme süresi
+    trip_total_dwell_time: float = 0.0   # toplam durakta durma süresi
+    trip_completed_count: int = 0        # tamamlanan sefer sayısı
+    trip_last_duration: float = 0.0      # son seferin toplam süresi (sn)
+
     def copy(self) -> SimVehicle:
         """Shallow copy."""
         return SimVehicle(
@@ -97,6 +102,11 @@ class SimVehicle:
             queue_wait_time=self.queue_wait_time,
             is_queuing=self.is_queuing,
             slot_meter_position=self.slot_meter_position,
+            trip_start_time=self.trip_start_time,
+            trip_total_queue_time=self.trip_total_queue_time,
+            trip_total_dwell_time=self.trip_total_dwell_time,
+            trip_completed_count=self.trip_completed_count,
+            trip_last_duration=self.trip_last_duration,
         )
 
 

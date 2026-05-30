@@ -437,6 +437,15 @@ const App: React.FC = () => {
     const [wsConnected, setWsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
+    // === ROUTE SEGMENT ===
+    const [segStart, setSegStart] = useState(0);
+    const [segEnd, setSegEnd] = useState(0);
+
+    // === STOP PANEL ===
+    const [stopPanelOpen, setStopPanelOpen] = useState(false);
+    const [selectedStopIdx, setSelectedStopIdx] = useState<number | null>(null);
+    const [stopSortBy, setStopSortBy] = useState<'congestion' | 'zone' | 'overflow' | 'name'>('congestion');
+
     // Bunching pair'e tıklayınca haritayı o bölgeye fly et
     const flyToBunchingPair = useCallback((pair: any) => {
         const map = mapInstanceRef.current;
@@ -553,6 +562,15 @@ const App: React.FC = () => {
         };
     }, [trainingMode]);
 
+    // Segment seçicileri: segEnd başlangıçta son durağa ayarla (STATION_LIST her zaman var)
+    const segEndInitRef = useRef(false);
+    useEffect(() => {
+        if (!segEndInitRef.current && STATION_LIST.length >= 2) {
+            setSegEnd(STATION_LIST.length - 1);
+            segEndInitRef.current = true;
+        }
+    }, []);
+
     const vehicles = [
         ...(simState.gidis?.vehicles ?? []),
         ...(simState.donus?.vehicles ?? []),
@@ -615,9 +633,14 @@ const App: React.FC = () => {
                         <div className="stat-value">{vehicles.length}</div>
                         <div className="stat-label">Aktif Araç</div>
                     </div>
-                    <div className="stat-card">
-                        <div className="stat-value">{STATION_LIST.length}</div>
-                        <div className="stat-label">Durak</div>
+                    <div className="stat-card" onClick={() => { setStopPanelOpen(p => !p); setSelectedStopIdx(null); }}
+                        style={{ cursor: 'pointer', transition: 'all 0.15s', ...(stopPanelOpen ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)' } : {}) }}>
+                        <div className="stat-value" style={{ color: stopPanelOpen ? '#00E5FF' : undefined }}>
+                            {trainingData?.activeSegment ? trainingData.activeSegment.stopCount : (trainingData?.stops?.length ?? STATION_LIST.length)}
+                        </div>
+                        <div className="stat-label" style={{ color: stopPanelOpen ? '#00E5FF' : undefined }}>
+                            Durak {trainingData?.activeSegment ? `/ ${trainingData.activeSegment.totalStops}` : ''} {stopPanelOpen ? '▲' : '▼'}
+                        </div>
                     </div>
                     <div className="stat-card accent">
                         <div className="stat-value">{vehicles.filter(v => v.direction === 'gidis').length}</div>
@@ -649,6 +672,81 @@ const App: React.FC = () => {
                         </div>
                     )}
                 </div>
+
+                {/* ===== ROTA SEGMENT SECICI ===== */}
+                {trainingMode && (() => {
+                    // Sunucudan allStops gelmediyse STATION_LIST'i fallback olarak kullan
+                    const allStops: { index: number; name: string }[] =
+                        trainingData?.allStops?.length >= 2
+                            ? trainingData.allStops
+                            : STATION_LIST.map((s, i) => ({ index: i, name: s.name }));
+                    const activeSegment = trainingData?.activeSegment ?? null;
+                    return (
+                        <div style={{ padding: '0 16px 8px' }}>
+                            <div style={{
+                                background: activeSegment ? 'rgba(0,188,212,0.1)' : 'rgba(255,255,255,0.04)',
+                                border: `1px solid ${activeSegment ? 'rgba(0,188,212,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                                borderRadius: '8px',
+                                padding: '10px',
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <span style={{ fontSize: '11px', color: activeSegment ? '#00BCD4' : '#888', fontWeight: 600 }}>
+                                        {activeSegment ? `Segment: ${activeSegment.stopCount}/${activeSegment.totalStops} durak` : 'Durak Segmenti'}
+                                    </span>
+                                    {activeSegment && wsConnected && (
+                                        <button
+                                            onClick={() => wsRef.current?.send(JSON.stringify({ action: 'reset_route_segment' }))}
+                                            style={{ fontSize: '10px', padding: '2px 7px', background: 'rgba(244,67,54,0.15)', border: '1px solid rgba(244,67,54,0.4)', borderRadius: '4px', color: '#EF9A9A', cursor: 'pointer' }}
+                                        >
+                                            Tüm Rota
+                                        </button>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    <select
+                                        value={segStart}
+                                        onChange={e => {
+                                            const v = Number(e.target.value);
+                                            setSegStart(v);
+                                            if (v >= segEnd) setSegEnd(Math.min(v + 1, allStops.length - 1));
+                                        }}
+                                        style={{ fontSize: '11px', padding: '4px 6px', background: '#1a2035', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '5px', color: '#ccc', width: '100%' }}
+                                    >
+                                        {allStops.map(s => (
+                                            <option key={s.index} value={s.index}>{s.index + 1}. {s.name}</option>
+                                        ))}
+                                    </select>
+                                    <div style={{ textAlign: 'center', fontSize: '9px', color: '#555' }}>→</div>
+                                    <select
+                                        value={segEnd}
+                                        onChange={e => setSegEnd(Number(e.target.value))}
+                                        style={{ fontSize: '11px', padding: '4px 6px', background: '#1a2035', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '5px', color: '#ccc', width: '100%' }}
+                                    >
+                                        {allStops.filter(s => s.index > segStart).map(s => (
+                                            <option key={s.index} value={s.index}>{s.index + 1}. {s.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const msg = JSON.stringify({ action: 'set_route_segment', start: segStart, end: segEnd });
+                                        console.log('[Segment] Gönderiliyor:', msg, 'WS state:', wsRef.current?.readyState);
+                                        wsRef.current?.send(msg);
+                                    }}
+                                    disabled={segEnd <= segStart || !wsConnected}
+                                    style={{ marginTop: '8px', width: '100%', fontSize: '11px', padding: '5px', background: (segEnd > segStart && wsConnected) ? '#00BCD4' : '#37474F', color: (segEnd > segStart && wsConnected) ? '#000' : '#555', border: 'none', borderRadius: '5px', cursor: (segEnd > segStart && wsConnected) ? 'pointer' : 'default', fontWeight: 600 }}
+                                >
+                                    {wsConnected ? `Uygula (${segEnd > segStart ? segEnd - segStart + 1 : 0} durak)` : 'Bağlantı bekleniyor...'}
+                                </button>
+                                {activeSegment && (
+                                    <div style={{ marginTop: '5px', fontSize: '10px', color: '#00BCD4', textAlign: 'center' }}>
+                                        {activeSegment.startName} → {activeSegment.endName}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Analitik Motor Metrikleri */}
                 {trainingMode && trainingData?.analytics && (
@@ -1071,6 +1169,46 @@ const App: React.FC = () => {
                         </React.Fragment>
                     ))}
 
+                    {/* Araç → NextStop çizgileri + araç üzeri yuvarlak */}
+                    {trainingMode && vehicles
+                        .filter(v =>
+                            (v.phase === 'cruising' || v.phase === 'approaching') &&
+                            (v as any).nextStopIndex != null &&
+                            (v as any).nextStopIndex < STATION_LIST.length
+                        )
+                        .map(v => {
+                            const a = (v as any)._analytic;
+                            const targetStop = STATION_LIST[(v as any).nextStopIndex];
+                            const isIntervened = a?.source === 'smart_stop';
+                            const color = isIntervened ? '#00E5FF' : 'rgba(255,255,255,0.55)';
+                            return (
+                                <React.Fragment key={`v2s-${v.direction}-${v.id}`}>
+                                    {/* Otobüsten durağa çizgi */}
+                                    <Polyline
+                                        positions={[[v.latitude, v.longitude], [targetStop.latitude, targetStop.longitude]]}
+                                        pathOptions={{
+                                            color,
+                                            weight: isIntervened ? 3 : 2,
+                                            opacity: isIntervened ? 0.9 : 0.5,
+                                            dashArray: '8 6',
+                                        }}
+                                    />
+                                    {/* Otobüs üzeri yuvarlak */}
+                                    <CircleMarker
+                                        center={[v.latitude, v.longitude]}
+                                        radius={isIntervened ? 10 : 8}
+                                        pathOptions={{
+                                            color,
+                                            weight: isIntervened ? 2.5 : 1.5,
+                                            fill: false,
+                                            opacity: isIntervened ? 0.9 : 0.5,
+                                        }}
+                                    />
+                                </React.Fragment>
+                            );
+                        })
+                    }
+
                     {/* Durak işaretçileri */}
                     {STATION_LIST.map((s, i) => (
                         <Marker
@@ -1193,6 +1331,47 @@ const App: React.FC = () => {
                             <div className="detail-row">
                                 <span className="detail-label">Durak</span>
                                 <span className="detail-value">{activeVehicle.totalStops} kez</span>
+                            </div>
+
+                            {/* === SEFER SÜRESİ === */}
+                            <div style={{
+                                marginTop: '8px', padding: '8px 10px', borderRadius: '8px',
+                                background: 'rgba(156,39,176,0.1)',
+                                border: '1px solid rgba(156,39,176,0.25)',
+                            }}>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: '#CE93D8', marginBottom: '6px' }}>
+                                    Sefer Süresi
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11px' }}>
+                                    <div style={{ color: '#aaa' }}>Geçen Süre
+                                        <div style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginTop: '2px' }}>
+                                            {Math.floor(((activeVehicle as any)._trip?.elapsed ?? 0) / 60)}:{String(Math.floor(((activeVehicle as any)._trip?.elapsed ?? 0) % 60)).padStart(2, '0')}
+                                        </div>
+                                    </div>
+                                    <div style={{ color: '#aaa' }}>Tamamlanan
+                                        <div style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginTop: '2px' }}>
+                                            {(activeVehicle as any)._trip?.completedTrips ?? 0} sefer
+                                        </div>
+                                    </div>
+                                    <div style={{ color: '#aaa' }}>Kuyruk Bekleme
+                                        <div style={{ color: ((activeVehicle as any)._trip?.queueTime ?? 0) > 60 ? '#F44336' : '#FF9800', fontWeight: 600, marginTop: '2px' }}>
+                                            {((activeVehicle as any)._trip?.queueTime ?? 0).toFixed(0)}s
+                                        </div>
+                                    </div>
+                                    <div style={{ color: '#aaa' }}>Durak Bekleme
+                                        <div style={{ color: '#64B5F6', fontWeight: 600, marginTop: '2px' }}>
+                                            {((activeVehicle as any)._trip?.dwellTime ?? 0).toFixed(0)}s
+                                        </div>
+                                    </div>
+                                </div>
+                                {((activeVehicle as any)._trip?.lastDuration ?? 0) > 0 && (
+                                    <div style={{ marginTop: '6px', padding: '4px 8px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                        <span style={{ color: '#aaa' }}>Son Sefer Süresi</span>
+                                        <span style={{ color: '#CE93D8', fontWeight: 700 }}>
+                                            {Math.floor(((activeVehicle as any)._trip?.lastDuration ?? 0) / 60)}:{String(Math.floor(((activeVehicle as any)._trip?.lastDuration ?? 0) % 60)).padStart(2, '0')}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* === DURAK BEKLEME BİLGİSİ === */}
@@ -1351,6 +1530,330 @@ const App: React.FC = () => {
                     </div>
                 )}
             </main>
+
+            {/* ===== DURAK DRAWER — haritanın sağından kayar ===== */}
+            {(() => {
+                const ssStates: Record<string, any> = trainingData?.analytics?.smartStopStates ?? {};
+                const wsStops: any[] = trainingData?.stops ?? [];
+
+                const allStops = STATION_LIST.map((s, i) => {
+                    const ss = ssStates[String(i)] ?? ssStates[String(i + 1)] ?? null;
+                    const ws = wsStops[i] ?? null;
+                    return {
+                        idx: i,
+                        name: s.name,
+                        congestion: ss?.congestion_level ?? 0,
+                        zone: ss?.vehicles_in_zone ?? 0,
+                        overflow: ss?.overflow_count ?? 0,
+                        occupied: ss?.occupied_slots ?? ws?.occupiedSlots ?? 0,
+                        capacity: ss?.slot_capacity ?? ws?.slotCount ?? 1,
+                        rearFree: ws?.rearFreeSlots ?? 0,
+                        queued: ws?.queuedCount ?? 0,
+                        approaching: ws?.approachingCount ?? ss?.vehicles_in_zone ?? 0,
+                        incomingEtas: (ss?.incoming_etas ?? []) as number[],
+                        platformLen: ws?.platformLengthMeters ?? 0,
+                    };
+                });
+
+                const sorted = [...allStops].sort((a, b) => {
+                    if (stopSortBy === 'congestion') return b.congestion - a.congestion;
+                    if (stopSortBy === 'zone') return b.zone - a.zone;
+                    if (stopSortBy === 'overflow') return b.overflow - a.overflow;
+                    return a.name.localeCompare(b.name, 'tr');
+                });
+
+                const sel = selectedStopIdx !== null ? allStops[selectedStopIdx] : null;
+
+                return (
+                    <div style={{
+                        position: 'fixed', top: 0, right: 0, bottom: 0,
+                        width: '360px',
+                        background: 'rgba(13,17,28,0.97)',
+                        backdropFilter: 'blur(12px)',
+                        borderLeft: '1px solid rgba(0,229,255,0.2)',
+                        display: 'flex', flexDirection: 'column',
+                        zIndex: 2000,
+                        transform: stopPanelOpen ? 'translateX(0)' : 'translateX(100%)',
+                        transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',
+                        boxShadow: stopPanelOpen ? '-8px 0 32px rgba(0,0,0,0.6)' : 'none',
+                    }}>
+
+                        {/* ── Drawer Header ── */}
+                        <div style={{
+                            padding: '18px 20px 14px',
+                            borderBottom: '1px solid rgba(0,229,255,0.15)',
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            background: 'rgba(0,229,255,0.04)',
+                        }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '16px', fontWeight: 800, color: '#00E5FF', letterSpacing: '-0.3px' }}>
+                                        SmartStop
+                                    </span>
+                                    <span style={{
+                                        fontSize: '10px', fontWeight: 600, padding: '2px 8px',
+                                        background: 'rgba(0,229,255,0.15)', color: '#00E5FF',
+                                        borderRadius: '10px', border: '1px solid rgba(0,229,255,0.25)',
+                                    }}>
+                                        {STATION_LIST.length} DURAK
+                                    </span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                    Durak Bölgesi Arayüzü
+                                </div>
+                            </div>
+                            {selectedStopIdx !== null && (
+                                <button onClick={() => setSelectedStopIdx(null)} style={{
+                                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                    color: '#94a3b8', borderRadius: '8px', padding: '6px 12px',
+                                    fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                                }}>
+                                    ← Tümü
+                                </button>
+                            )}
+                            <button onClick={() => { setStopPanelOpen(false); setSelectedStopIdx(null); }} style={{
+                                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                color: '#64748b', borderRadius: '8px', width: '32px', height: '32px',
+                                fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* ── Sıralama toolbar (liste görünümünde) ── */}
+                        {selectedStopIdx === null && (
+                            <div style={{
+                                padding: '10px 16px',
+                                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                display: 'flex', gap: '6px', alignItems: 'center',
+                            }}>
+                                <span style={{ fontSize: '10px', color: '#475569', marginRight: '2px' }}>Sırala:</span>
+                                {([
+                                    { key: 'congestion', label: 'Yoğunluk' },
+                                    { key: 'zone', label: 'Zone' },
+                                    { key: 'overflow', label: 'Overflow' },
+                                    { key: 'name', label: 'İsim' },
+                                ] as { key: typeof stopSortBy; label: string }[]).map(({ key, label }) => (
+                                    <button key={key} onClick={() => setStopSortBy(key)} style={{
+                                        padding: '4px 10px', fontSize: '11px', borderRadius: '20px', cursor: 'pointer',
+                                        border: stopSortBy === key ? '1px solid #00E5FF' : '1px solid rgba(255,255,255,0.08)',
+                                        background: stopSortBy === key ? 'rgba(0,229,255,0.15)' : 'rgba(255,255,255,0.04)',
+                                        color: stopSortBy === key ? '#00E5FF' : '#64748b',
+                                        fontWeight: stopSortBy === key ? 700 : 400, transition: 'all 0.15s',
+                                    }}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* ── İçerik alanı ── */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+
+                            {/* LISTE GÖRÜNÜMÜ */}
+                            {selectedStopIdx === null && sorted.map(stop => {
+                                const fillPct = Math.min(100, Math.round((stop.occupied / Math.max(stop.capacity, 1)) * 100));
+                                const cColor = stop.congestion > 0.75 ? '#ef4444' : stop.congestion > 0.4 ? '#f59e0b' : '#22c55e';
+                                const hasActivity = stop.zone > 0 || stop.queued > 0 || stop.occupied > 0;
+                                return (
+                                    <div key={stop.idx} onClick={() => setSelectedStopIdx(stop.idx)} style={{
+                                        display: 'flex', alignItems: 'center', gap: '10px',
+                                        padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
+                                        marginBottom: '4px',
+                                        background: hasActivity ? 'rgba(255,255,255,0.04)' : 'transparent',
+                                        border: hasActivity ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
+                                        transition: 'all 0.15s',
+                                    }}
+                                        onMouseEnter={e => {
+                                            (e.currentTarget as HTMLDivElement).style.background = 'rgba(0,229,255,0.07)';
+                                            (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(0,229,255,0.2)';
+                                        }}
+                                        onMouseLeave={e => {
+                                            (e.currentTarget as HTMLDivElement).style.background = hasActivity ? 'rgba(255,255,255,0.04)' : 'transparent';
+                                            (e.currentTarget as HTMLDivElement).style.borderColor = hasActivity ? 'rgba(255,255,255,0.06)' : 'transparent';
+                                        }}
+                                    >
+                                        {/* Congestion dot */}
+                                        <div style={{
+                                            width: '8px', height: '8px', borderRadius: '50%',
+                                            background: cColor, flexShrink: 0,
+                                            boxShadow: stop.congestion > 0.4 ? `0 0 6px ${cColor}88` : 'none',
+                                        }} />
+
+                                        {/* Stop name + badges */}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {stop.name}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', marginTop: '3px' }}>
+                                                {stop.zone > 0 && (
+                                                    <span style={{ fontSize: '10px', color: '#00BCD4', fontWeight: 600 }}>{stop.zone} zone</span>
+                                                )}
+                                                {stop.queued > 0 && (
+                                                    <span style={{ fontSize: '10px', color: '#FFEB3B', fontWeight: 600 }}>{stop.queued} kuyruk</span>
+                                                )}
+                                                {stop.approaching > 0 && (
+                                                    <span style={{ fontSize: '10px', color: '#64748b' }}>{stop.approaching} yaklaşan</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Slot fill + sayısı */}
+                                        <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 700, color: fillPct >= 100 ? '#ef4444' : fillPct > 60 ? '#f59e0b' : '#94a3b8' }}>
+                                                {stop.occupied}/{stop.capacity}
+                                            </span>
+                                            <div style={{ width: '48px', height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${fillPct}%`, height: '100%', background: cColor, borderRadius: '2px', transition: 'width 0.3s' }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {/* DETAY GÖRÜNÜMÜ */}
+                            {selectedStopIdx !== null && sel && (
+                                <div>
+                                    {/* Stop başlığı */}
+                                    <div style={{
+                                        padding: '16px', borderRadius: '12px', marginBottom: '12px',
+                                        background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)',
+                                    }}>
+                                        <div style={{ fontSize: '15px', fontWeight: 700, color: '#f0f4f8', marginBottom: '4px' }}>{sel.name}</div>
+                                        <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#64748b' }}>
+                                            <span>Platform {sel.platformLen}m</span>
+                                            <span>{sel.capacity} slot kapasitesi</span>
+                                            <span style={{ color: '#00E5FF' }}>#{sel.idx}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* 4 KPI kartı */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                                        {([
+                                            { label: 'Zone Araç', value: sel.zone, color: '#00BCD4', sub: 'bölgede yaklaşan' },
+                                            { label: 'Kuyruk', value: sel.queued, color: sel.queued > 0 ? '#FFEB3B' : '#334155', sub: 'peron girişinde' },
+                                            { label: 'Yaklaşan', value: sel.approaching, color: '#60a5fa', sub: 'approaching fazında' },
+                                            { label: 'Overflow', value: sel.overflow, color: sel.overflow > 0 ? '#ef4444' : '#334155', sub: 'toplam taşma' },
+                                        ] as { label: string; value: number; color: string; sub: string }[]).map(({ label, value, color, sub }) => (
+                                            <div key={label} style={{
+                                                padding: '12px', borderRadius: '10px',
+                                                background: value > 0 ? `${color}12` : 'rgba(255,255,255,0.03)',
+                                                border: `1px solid ${value > 0 ? color + '33' : 'rgba(255,255,255,0.06)'}`,
+                                            }}>
+                                                <div style={{ fontSize: '22px', fontWeight: 800, color: value > 0 ? color : '#475569', lineHeight: 1 }}>{value}</div>
+                                                <div style={{ fontSize: '11px', color: '#e2e8f0', fontWeight: 600, marginTop: '4px' }}>{label}</div>
+                                                <div style={{ fontSize: '10px', color: '#475569', marginTop: '1px' }}>{sub}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Slot doluluk */}
+                                    <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', marginBottom: '10px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>Slot Doluluk</span>
+                                            <span style={{ fontSize: '13px', fontWeight: 700, color: sel.occupied >= sel.capacity ? '#ef4444' : '#f0f4f8' }}>
+                                                {sel.occupied}/{sel.capacity}
+                                                <span style={{ fontSize: '10px', color: '#475569', fontWeight: 400, marginLeft: '5px' }}>({sel.rearFree} girilebilir)</span>
+                                            </span>
+                                        </div>
+                                        {/* Büyük progress bar */}
+                                        <div style={{ height: '10px', background: 'rgba(255,255,255,0.07)', borderRadius: '5px', overflow: 'hidden', marginBottom: '8px' }}>
+                                            <div style={{
+                                                height: '100%', borderRadius: '5px', transition: 'width 0.4s',
+                                                width: `${Math.min(100, Math.round((sel.occupied / Math.max(sel.capacity, 1)) * 100))}%`,
+                                                background: sel.occupied >= sel.capacity
+                                                    ? 'linear-gradient(90deg,#f59e0b,#ef4444)'
+                                                    : sel.occupied > sel.capacity * 0.6
+                                                        ? 'linear-gradient(90deg,#22c55e,#f59e0b)'
+                                                        : '#22c55e',
+                                            }} />
+                                        </div>
+                                        {/* Slot kutuları */}
+                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                            {Array.from({ length: sel.capacity }).map((_, si) => {
+                                                const isOccupied = si < sel.occupied;
+                                                const isFull = sel.rearFree === 0 && isOccupied;
+                                                return (
+                                                    <div key={si} style={{
+                                                        flex: 1, height: '20px', borderRadius: '4px',
+                                                        background: isOccupied ? (isFull ? 'rgba(239,68,68,0.6)' : 'rgba(245,158,11,0.5)') : 'rgba(255,255,255,0.07)',
+                                                        border: `1px solid ${isOccupied ? (isFull ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.3)') : 'rgba(255,255,255,0.05)'}`,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontSize: '8px', color: isOccupied ? '#fff' : '#1e293b', fontWeight: 700,
+                                                    }}>
+                                                        {isOccupied ? '🚌' : ''}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Yoğunluk */}
+                                    <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', marginBottom: '10px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>Yoğunluk Seviyesi</span>
+                                            <span style={{ fontSize: '16px', fontWeight: 800, color: sel.congestion > 0.75 ? '#ef4444' : sel.congestion > 0.4 ? '#f59e0b' : '#22c55e' }}>
+                                                {Math.round(sel.congestion * 100)}%
+                                            </span>
+                                        </div>
+                                        <div style={{ height: '8px', background: 'rgba(255,255,255,0.07)', borderRadius: '4px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                height: '100%', borderRadius: '4px', transition: 'width 0.4s',
+                                                width: `${Math.round(sel.congestion * 100)}%`,
+                                                background: sel.congestion > 0.75
+                                                    ? 'linear-gradient(90deg,#f59e0b,#ef4444)'
+                                                    : sel.congestion > 0.4 ? '#f59e0b' : '#22c55e',
+                                            }} />
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '9px', color: '#334155' }}>
+                                            <span>Düşük</span><span>Orta</span><span>Yüksek</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Gelen ETA'lar */}
+                                    {sel.incomingEtas.length > 0 && (
+                                        <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px' }}>
+                                                Gelen ETA&apos;lar
+                                                <span style={{ fontSize: '10px', color: '#475569', fontWeight: 400, marginLeft: '6px' }}>
+                                                    ({sel.incomingEtas.length} araç)
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                {sel.incomingEtas.slice(0, 6).map((eta: number, ei: number) => {
+                                                    const urgency = eta < 15 ? { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: 'Kritik' }
+                                                        : eta < 30 ? { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'Yakın' }
+                                                            : { color: '#00BCD4', bg: 'rgba(0,188,212,0.08)', label: 'Normal' };
+                                                    const barPct = Math.max(4, Math.min(100, ((60 - Math.min(eta, 60)) / 60) * 100));
+                                                    return (
+                                                        <div key={ei} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                            <div style={{
+                                                                minWidth: '36px', textAlign: 'center', padding: '3px 0',
+                                                                fontSize: '11px', fontWeight: 700, color: urgency.color,
+                                                            }}>
+                                                                {eta.toFixed(0)}s
+                                                            </div>
+                                                            <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                                <div style={{ width: `${barPct}%`, height: '100%', background: urgency.color, borderRadius: '3px', opacity: 0.7 }} />
+                                                            </div>
+                                                            <span style={{
+                                                                fontSize: '9px', padding: '2px 7px', borderRadius: '8px',
+                                                                background: urgency.bg, color: urgency.color, fontWeight: 600,
+                                                            }}>
+                                                                {urgency.label}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 };
