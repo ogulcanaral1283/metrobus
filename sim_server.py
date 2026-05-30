@@ -595,7 +595,7 @@ class SimManager:
 
         self.controller.reset()
         self.pid.reset()
-        print(f"[SIM] Segment: {self.stops[start_idx].name} → {self.stops[end_idx].name} ({end_idx - start_idx + 1} durak, {seg_length:.0f}m)")
+        print(f"[SIM] Segment: {self.stops[start_idx].name} -> {self.stops[end_idx].name} ({end_idx - start_idx + 1} durak, {seg_length:.0f}m)")
 
     def reset_route_segment(self):
         """Segment sıfırla — araçlar tam rotaya yeniden dağıtılır."""
