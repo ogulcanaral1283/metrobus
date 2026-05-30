@@ -446,6 +446,9 @@ const App: React.FC = () => {
     const [selectedStopIdx, setSelectedStopIdx] = useState<number | null>(null);
     const [stopSortBy, setStopSortBy] = useState<'congestion' | 'zone' | 'overflow' | 'name'>('congestion');
 
+    // === MOTOR INCELEME ===
+    const [motorInspectOpen, setMotorInspectOpen] = useState(false);
+
     // Bunching pair'e tıklayınca haritayı o bölgeye fly et
     const flyToBunchingPair = useCallback((pair: any) => {
         const map = mapInstanceRef.current;
@@ -463,6 +466,20 @@ const App: React.FC = () => {
             [v2.latitude, v2.longitude],
         );
         map.flyToBounds(bounds.pad(0.5), { maxZoom: 17, duration: 0.8 });
+    }, [trainingData, simState]);
+
+    // Araç ID'sine göre haritayı o araca fly et
+    const flyToVehicle = useCallback((vehicleId: number) => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        const allVehicles = trainingData?.vehicles ?? [
+            ...(simState.gidis?.vehicles ?? []),
+            ...(simState.donus?.vehicles ?? []),
+        ];
+        const v = allVehicles.find((v: any) => v.id === vehicleId);
+        if (!v) return;
+        map.flyTo([v.latitude, v.longitude], 17, { duration: 0.8 });
+        setSelectedVehicleKey({ id: v.id, direction: v.direction });
     }, [trainingData, simState]);
 
     // Çift yönlü engine init
@@ -836,6 +853,90 @@ const App: React.FC = () => {
                         </details>
                     </div>
                 )}
+                {/* ===== MOTOR INCELEME ===== */}
+                {trainingMode && wsConnected && (
+                    <div style={{ padding: '0 16px 8px', borderTop: '1px solid rgba(0,229,255,0.15)' }}>
+                        <button
+                            onClick={() => setMotorInspectOpen(p => !p)}
+                            style={{
+                                width: '100%', textAlign: 'left', padding: '8px 10px',
+                                background: motorInspectOpen ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.04)',
+                                border: `1px solid ${motorInspectOpen ? 'rgba(0,229,255,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                                borderRadius: '8px', color: motorInspectOpen ? '#00E5FF' : '#94a3b8',
+                                fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex',
+                                alignItems: 'center', justifyContent: 'space-between',
+                                marginTop: '6px',
+                            }}
+                        >
+                            <span>🔬 Motor İnceleme</span>
+                            <span style={{ fontSize: '10px' }}>{motorInspectOpen ? '▲' : '▼'}</span>
+                        </button>
+
+                        {motorInspectOpen && (() => {
+                            const ssStates: Record<string, any> = trainingData?.analytics?.smartStopStates ?? {};
+                            // Tüm durak -> interventions topla
+                            const allInterventions: { stopIdx: number; stopName: string; intervention: any }[] = [];
+                            Object.entries(ssStates).forEach(([idxStr, state]: [string, any]) => {
+                                const interventions: any[] = state?.interventions ?? [];
+                                interventions.forEach(iv => {
+                                    allInterventions.push({
+                                        stopIdx: Number(idxStr),
+                                        stopName: state?.stop_name ?? `#${idxStr}`,
+                                        intervention: iv,
+                                    });
+                                });
+                            });
+
+                            const reasonColor: Record<string, string> = {
+                                cascade: '#FF9800',
+                                overflow: '#F44336',
+                                downstream: '#00BCD4',
+                                queue_cheaper: '#78909C',
+                            };
+
+                            if (allInterventions.length === 0) {
+                                return (
+                                    <div style={{ padding: '10px 4px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>
+                                        Aktif müdahale yok
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div style={{ marginTop: '8px', maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                    {allInterventions.map((item, i) => {
+                                        const iv = item.intervention;
+                                        const color = reasonColor[iv.reason] ?? '#94a3b8';
+                                        const vCode = `AM-${String(iv.vehicleId).padStart(2, '0')}`;
+                                        return (
+                                            <div key={i}
+                                                onClick={() => flyToVehicle(iv.vehicleId)}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                                    padding: '5px 8px', borderRadius: '6px', cursor: 'pointer',
+                                                    background: 'rgba(255,255,255,0.03)',
+                                                    border: `1px solid ${color}33`,
+                                                    fontSize: '10px',
+                                                    transition: 'all 0.12s',
+                                                }}
+                                                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = `${color}15`; }}
+                                                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.03)'; }}
+                                            >
+                                                <span style={{ color: '#64748b', minWidth: '36px', fontFamily: 'monospace', fontSize: '9px' }}>{vCode}</span>
+                                                <span style={{ color: '#e2e8f0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>{item.stopName}</span>
+                                                <span style={{ color, fontWeight: 700, minWidth: '52px', fontSize: '9px' }}>{iv.reason}</span>
+                                                <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '10px' }}>×{iv.speedFactor.toFixed(2)}</span>
+                                                <span style={{ color: '#94a3b8', fontSize: '9px', whiteSpace: 'nowrap' }}>ETA:{iv.etaToStop}s→{iv.idealArrival}s</span>
+                                                <span style={{ color: iv.queueTimeSaved > 0 ? '#4CAF50' : '#94a3b8', fontWeight: 600, fontSize: '9px', whiteSpace: 'nowrap' }}>+{iv.queueTimeSaved}s</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+
                 {/* Legacy Training Metrikleri */}
                 {trainingMode && trainingData?.metrics && !trainingData?.analytics && (
                     <div style={{ padding: '8px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
@@ -1552,6 +1653,10 @@ const App: React.FC = () => {
                         approaching: ws?.approachingCount ?? ss?.vehicles_in_zone ?? 0,
                         incomingEtas: (ss?.incoming_etas ?? []) as number[],
                         platformLen: ws?.platformLengthMeters ?? 0,
+                        slotTimeline: (ss?.slotTimeline ?? []) as any[],
+                        interventions: (ss?.interventions ?? []) as any[],
+                        downstreamPressure: (ss?.downstreamPressure ?? 0) as number,
+                        upstreamDensity: (ss?.upstreamDensity ?? 0) as number,
                     };
                 });
 
@@ -1812,7 +1917,7 @@ const App: React.FC = () => {
 
                                     {/* Gelen ETA'lar */}
                                     {sel.incomingEtas.length > 0 && (
-                                        <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                                        <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', marginBottom: '10px' }}>
                                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px' }}>
                                                 Gelen ETA&apos;lar
                                                 <span style={{ fontSize: '10px', color: '#475569', fontWeight: 400, marginLeft: '6px' }}>
@@ -1845,6 +1950,135 @@ const App: React.FC = () => {
                                                         </div>
                                                     );
                                                 })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* === SLOT TIMELINE (Motor İnceleme) === */}
+                                    {sel.slotTimeline.length > 0 && (
+                                        <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)', marginBottom: '10px' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#00E5FF', marginBottom: '10px' }}>
+                                                Slot Zaman Çizelgesi
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                {sel.slotTimeline.map((slot: any, si: number) => {
+                                                    const isEmpty = slot.busId === null || slot.busId === undefined;
+                                                    const freeTime: number = slot.freeTime ?? 0;
+                                                    // Renk: boş=yeşil, dolu ve freeTime'a göre sarı→kırmızı
+                                                    let bg = '#22c55e33';
+                                                    let border = '#22c55e55';
+                                                    let textColor = '#22c55e';
+                                                    if (!isEmpty) {
+                                                        if (freeTime > 20) { bg = '#ef444433'; border = '#ef444455'; textColor = '#ef4444'; }
+                                                        else if (freeTime > 8) { bg = '#f59e0b33'; border = '#f59e0b55'; textColor = '#f59e0b'; }
+                                                        else { bg = '#fbbf2433'; border = '#fbbf2455'; textColor = '#fbbf24'; }
+                                                    }
+                                                    return (
+                                                        <div key={si} style={{
+                                                            width: '52px', height: '40px', borderRadius: '6px',
+                                                            background: bg, border: `1px solid ${border}`,
+                                                            display: 'flex', flexDirection: 'column',
+                                                            alignItems: 'center', justifyContent: 'center',
+                                                            fontSize: '9px', color: textColor, fontWeight: 700,
+                                                        }}>
+                                                            <span style={{ fontSize: '8px', color: '#64748b' }}>#{slot.slotId}</span>
+                                                            {isEmpty ? <span>boş</span> : <span>{freeTime.toFixed(0)}s</span>}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* === MÜDAHALELEr (Motor İnceleme) === */}
+                                    {sel.interventions.length > 0 && (
+                                        <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,152,0,0.04)', border: '1px solid rgba(255,152,0,0.15)', marginBottom: '10px' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#FF9800', marginBottom: '10px' }}>
+                                                Aktif Müdahaleler
+                                                <span style={{ fontSize: '10px', color: '#475569', fontWeight: 400, marginLeft: '6px' }}>
+                                                    ({sel.interventions.length} araç)
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                {sel.interventions.map((iv: any, ii: number) => {
+                                                    const reasonColorMap: Record<string, string> = {
+                                                        cascade: '#FF9800',
+                                                        overflow: '#ef4444',
+                                                        downstream: '#00BCD4',
+                                                        queue_cheaper: '#78909C',
+                                                    };
+                                                    const rc = reasonColorMap[iv.reason] ?? '#94a3b8';
+                                                    const sfPct = Math.round((1 - iv.speedFactor) * 100);
+                                                    const vCode = `AM-${String(iv.vehicleId).padStart(2, '0')}`;
+                                                    return (
+                                                        <div key={ii}
+                                                            onClick={() => flyToVehicle(iv.vehicleId)}
+                                                            style={{
+                                                                padding: '8px 10px', borderRadius: '8px', cursor: 'pointer',
+                                                                background: `${rc}0d`, border: `1px solid ${rc}33`,
+                                                                transition: 'all 0.12s',
+                                                            }}
+                                                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = `${rc}20`; }}
+                                                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = `${rc}0d`; }}
+                                                        >
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0', fontFamily: 'monospace' }}>{vCode}</span>
+                                                                <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '8px', background: `${rc}22`, color: rc }}>{iv.reason}</span>
+                                                            </div>
+                                                            {/* Speed factor bar */}
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                                <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>×{iv.speedFactor.toFixed(2)}</span>
+                                                                <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.07)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                                    <div style={{ width: `${sfPct}%`, height: '100%', background: '#f59e0b', borderRadius: '3px' }} />
+                                                                </div>
+                                                                <span style={{ fontSize: '9px', color: '#64748b' }}>{sfPct}% yavaş</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
+                                                                <span>ETA <b style={{ color: '#94a3b8' }}>{iv.etaToStop}s</b> → İdeal <b style={{ color: '#00BCD4' }}>{iv.idealArrival}s</b></span>
+                                                                <span style={{ color: iv.netBenefit > 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                                                                    {iv.netBenefit > 0 ? '+' : ''}{iv.netBenefit.toFixed(1)} fayda
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* === DOWNSTREAM / UPSTREAM BASINC (Motor İnceleme) === */}
+                                    {(sel.downstreamPressure > 0 || sel.upstreamDensity > 0) && (
+                                        <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', marginBottom: '10px' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', marginBottom: '10px' }}>
+                                                Komşu Baskı
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                {/* Downstream */}
+                                                <div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                                                        <span style={{ color: '#ef4444' }}>Downstream Baskı</span>
+                                                        <span style={{ color: '#ef4444', fontWeight: 700 }}>{sel.downstreamPressure.toFixed(2)}</span>
+                                                    </div>
+                                                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            width: `${Math.min(100, sel.downstreamPressure * 60)}%`,
+                                                            height: '100%', background: '#ef4444', borderRadius: '3px', opacity: 0.8,
+                                                        }} />
+                                                    </div>
+                                                </div>
+                                                {/* Upstream */}
+                                                <div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                                                        <span style={{ color: '#60a5fa' }}>Upstream Yoğunluk</span>
+                                                        <span style={{ color: '#60a5fa', fontWeight: 700 }}>{sel.upstreamDensity.toFixed(2)}</span>
+                                                    </div>
+                                                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            width: `${Math.min(100, sel.upstreamDensity * 80)}%`,
+                                                            height: '100%', background: '#60a5fa', borderRadius: '3px', opacity: 0.8,
+                                                        }} />
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     )}

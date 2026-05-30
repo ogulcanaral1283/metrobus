@@ -117,6 +117,7 @@ class SpeedRecommendation:
     ideal_arrival: float        # slot boşaldığında ideal varış (sn)
     queue_time_avoided: float   # müdahaleyle önlenen bekleme süresi (sn)
     net_benefit: float          # pozitif → yavaşlamak kârlı
+    stop_index: int = 0         # hedef durağın index'i
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -211,7 +212,7 @@ class SmartStop:
             )
             _update_slot_timeline(
                 slot_timeline, actual_eta, bus.id, self.stop, is_rush_hour,
-            )
+            )  # arrival_eta = actual_eta (gerçek ETA, yavaşlatılmış değil)
 
         # Durumu interface'e yayınla
         state = self._build_state(zone_buses, platform_buses, slot_timeline, sim_time)
@@ -338,6 +339,7 @@ class SmartStop:
                 source="none", reason="too_close",
                 eta_to_stop=0.0, ideal_arrival=0.0,
                 queue_time_avoided=0.0, net_benefit=0.0,
+                stop_index=self.stop.index,
             )
 
         # ── 2. ETA hesabı ─────────────────────────────────────────
@@ -350,6 +352,7 @@ class SmartStop:
                 source="none", reason="on_time",
                 eta_to_stop=eta, ideal_arrival=0.0,
                 queue_time_avoided=0.0, net_benefit=0.0,
+                stop_index=self.stop.index,
             )
 
         slot_id, slot_free_time, _ = min(slot_timeline, key=lambda x: x[1])
@@ -363,6 +366,7 @@ class SmartStop:
                 source="none", reason="on_time",
                 eta_to_stop=eta, ideal_arrival=ideal_arrival,
                 queue_time_avoided=0.0, net_benefit=0.0,
+                stop_index=self.stop.index,
             )
 
         # ── 4. Kost-Fayda Analizi ─────────────────────────────────
@@ -395,6 +399,7 @@ class SmartStop:
                 ideal_arrival=ideal_arrival,
                 queue_time_avoided=queue_time,
                 net_benefit=net_benefit,
+                stop_index=self.stop.index,
             )
 
         # [FIX-3] Cascade yoksa bile: queue_time eşiği aştıysa müdahale et
@@ -410,6 +415,7 @@ class SmartStop:
                 ideal_arrival=ideal_arrival,
                 queue_time_avoided=queue_time,
                 net_benefit=queue_time - MIN_QUEUE_TO_INTERVENE,
+                stop_index=self.stop.index,
             )
 
         # Queue kabul etmek daha kârlı (küçük, kısa süreli bekleme)
@@ -418,6 +424,7 @@ class SmartStop:
             source="none", reason="queue_cheaper",
             eta_to_stop=eta, ideal_arrival=ideal_arrival,
             queue_time_avoided=0.0, net_benefit=net_benefit,
+            stop_index=self.stop.index,
         )
 
     def _compute_speed_factor(
@@ -490,6 +497,10 @@ class SmartStop:
         congestion     = (occupied + approaching) / total_cap
         overflow_count = max(0, occupied + approaching - total_cap)
 
+        # Komşu baskı metrikleri
+        downstream_pressure = self.interface.get_downstream_pressure(self.stop.index)
+        upstream_density    = self.interface.get_upstream_density(self.stop.index)
+
         return StopZoneState(
             stop_index=self.stop.index,
             stop_name=self.stop.name,
@@ -501,6 +512,9 @@ class SmartStop:
             congestion_level=congestion,
             overflow_count=overflow_count,
             sim_time=sim_time,
+            slot_timeline=list(slot_timeline),
+            downstream_pressure=downstream_pressure,
+            upstream_density=upstream_density,
         )
 
 
@@ -510,7 +524,7 @@ class SmartStop:
 
 def _update_slot_timeline(
     slots: List[Tuple[int, float, Optional[int]]],
-    ideal_arrival: float,
+    arrival_eta: float,
     vehicle_id: int,
     stop: LinearStop,
     is_rush_hour: bool,
@@ -524,7 +538,7 @@ def _update_slot_timeline(
     min_idx = min(range(len(slots)), key=lambda i: slots[i][1])
     slot_id, _, _ = slots[min_idx]
     dwell        = estimate_dwell(stop, is_rush_hour)
-    new_free     = ideal_arrival + dwell + DEPARTURE_OVERHEAD
+    new_free     = arrival_eta + dwell + DEPARTURE_OVERHEAD
     slots[min_idx] = (slot_id, new_free, vehicle_id)
 
 

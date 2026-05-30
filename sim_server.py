@@ -697,6 +697,11 @@ class SimManager:
                     "source": cmd.source if cmd else "none",
                     "overflowRisk": round(cmd.overflow_risk, 2) if cmd else 0,
                     "isInsidePlatform": is_inside_platform_zone(veh.position_meters, 20.0, self.stops[veh.next_stop_index]) if veh.next_stop_index < len(self.stops) else False,
+                    "reason": cmd.reason if cmd else "",
+                    "etaToStop": round(cmd.eta_to_stop, 1) if cmd else 0.0,
+                    "idealArrival": round(cmd.ideal_arrival, 1) if cmd else 0.0,
+                    "queueTimeSaved": round(cmd.queue_time_avoided, 1) if cmd else 0.0,
+                    "netBenefit": round(cmd.net_benefit, 2) if cmd else 0.0,
                 },
                 "_trip": {
                     "elapsed": round(self.sim_time - veh.trip_start_time, 1),

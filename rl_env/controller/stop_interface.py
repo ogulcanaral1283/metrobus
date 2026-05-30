@@ -57,6 +57,11 @@ class StopZoneState:
     # ── Zaman damgası ──────────────────────────────────────────────
     sim_time: float                         # bu durum ne zaman hesaplandı (sim saniyesi)
 
+    # ── Motor İnceleme — ek alanlar ───────────────────────────────
+    slot_timeline: list = field(default_factory=list)   # [(slot_id, free_time, bus_id_or_None)]
+    downstream_pressure: float = 0.0
+    upstream_density: float = 0.0
+
 
 class StopInterface:
     """

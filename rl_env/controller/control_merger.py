@@ -91,6 +91,9 @@ class ControlMerger:
         # Sim zamanı
         self._sim_time: float = 0.0
 
+        # Son SmartStop önerileri (dashboard için)
+        self._last_rec_map: dict = {}
+
     # ──────────────────────────────────────────────────────────────
     # Ana Hesaplama
     # ──────────────────────────────────────────────────────────────
@@ -131,6 +134,7 @@ class ControlMerger:
             recs = smart_stop.update(vehicles, is_rush_hour, self._sim_time)
             for rec in recs:
                 rec_map[rec.vehicle_id] = rec
+        self._last_rec_map = rec_map
 
         # ── Her araç için ControlCommand üret ────────────────────
         commands: List[ControlCommand] = []
@@ -277,8 +281,39 @@ class ControlMerger:
 
     def get_stop_interface_states(self) -> dict:
         """Tüm durak bölge durumlarını döndür (dashboard için)."""
-        return {
-            idx: {
+        # SmartStop önerilerini stop_index -> [rec, ...] olarak grupla
+        recs_by_stop: Dict[int, list] = {}
+        for rec in self._last_rec_map.values():
+            if rec.source == "smart_stop":
+                recs_by_stop.setdefault(rec.stop_index, []).append(rec)
+
+        result = {}
+        for idx, s in self._interface.get_all_states().items():
+            # slot_timeline: [(slot_id, free_time, bus_id_or_None)]
+            slot_timeline_json = [
+                {"slotId": t[0], "freeTime": round(t[1], 1), "busId": t[2]}
+                for t in s.slot_timeline
+            ]
+
+            # Bu durağa yaklaşan müdahale edilmiş araçlar
+            interventions = [
+                {
+                    "vehicleId": rec.vehicle_id,
+                    "speedFactor": round(rec.speed_factor, 2),
+                    "reason": rec.reason,
+                    "etaToStop": round(rec.eta_to_stop, 1),
+                    "idealArrival": round(rec.ideal_arrival, 1),
+                    "queueTimeSaved": round(rec.queue_time_avoided, 1),
+                    "netBenefit": round(rec.net_benefit, 2),
+                }
+                for rec in recs_by_stop.get(idx, [])
+            ]
+
+            # Komşu baskı
+            downstream_pressure = round(self._interface.get_downstream_pressure(idx), 3)
+            upstream_density    = round(self._interface.get_upstream_density(idx), 3)
+
+            result[idx] = {
                 "stop_name": s.stop_name,
                 "vehicles_in_zone": s.vehicles_in_zone,
                 "occupied_slots": s.occupied_slots,
@@ -286,9 +321,12 @@ class ControlMerger:
                 "congestion_level": round(s.congestion_level, 2),
                 "overflow_count": s.overflow_count,
                 "incoming_etas": s.incoming_etas,
+                "slotTimeline": slot_timeline_json,
+                "downstreamPressure": downstream_pressure,
+                "upstreamDensity": upstream_density,
+                "interventions": interventions,
             }
-            for idx, s in self._interface.get_all_states().items()
-        }
+        return result
 
     def reset(self) -> None:
         """Tüm katmanların durumunu sıfırla (yeni episode)."""
@@ -296,7 +334,7 @@ class ControlMerger:
         if self.pid:
             self.pid.reset()
         self._interface.reset()
-        self._sim_time = 0.0
-        # SmartStop'lar yeniden başlatılacak
-        self._stops_initialized = False
         self._smart_stops = []
+        self._stops_initialized = False
+        self._sim_time = 0.0
+        self._last_rec_map = {}
