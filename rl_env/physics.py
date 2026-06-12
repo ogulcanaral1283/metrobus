@@ -1,6 +1,4 @@
 """
-IDM (Intelligent Driver Model) Fizik Motoru
-TypeScript physics.ts'den Python'a taşındı.
 Gerçekçi araç ivme/fren/takip hesaplamaları.
 """
 

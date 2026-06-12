@@ -292,8 +292,8 @@ def _load_from_cache(
 
 # Araç uzunluğu + araçlar arası boşluk (metre)
 _BUS_LENGTH = 20.0
-_VEHICLE_GAP = 5.0
-_SLOT_SIZE = _BUS_LENGTH + _VEHICLE_GAP  # 25m per slot
+_VEHICLE_GAP = 0.5
+_SLOT_SIZE = _BUS_LENGTH + _VEHICLE_GAP  # 20.5m per slot
 _DEFAULT_PLATFORM_LENGTH = 60.0  # veri eksikse varsayılan
 
 
@@ -301,8 +301,8 @@ def _recalculate_slot_counts(route: LinearRoute) -> None:
     """
     Tüm durakların slot sayısını platform uzunluğundan hesapla.
 
-    Formül: slot_count = floor(platform_length / 25)
-    25m = 20m araç + 5m araçlar arası boşluk
+    Formül: slot_count = floor(platform_length / 20.5)
+    20.5m = 20m araç + 0.5m araçlar arası boşluk (saha gözlemi)
 
     Platform uzunluğu 0 veya eksikse varsayılan 60m kullanılır.
     """

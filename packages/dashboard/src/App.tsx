@@ -145,6 +145,9 @@ function vehicleIcon(vehicle: SimVehicle) {
         || (vehicle.phase === 'approaching' && vehicle.speed * 3.6 < 5 && !v._analytic?.isInsidePlatform);
     const isBlocked = vehicle.phase === 'blocked';
     const speedFactor = v._analytic?.speedFactor ?? 1.0;
+    const bandLow = v._analytic?.bandLowKmh ?? 0;
+    const bandHigh = v._analytic?.bandHighKmh ?? 0;
+    const hasBand = bandLow > 0 && bandHigh > 0;
     const isSpeedAdjusted = speedFactor < 0.95 && !isQueued && !isBlocked && !isBunched;
 
     // Pulse class önceliği: queued/blocked > bunching > speedAdjust
@@ -243,7 +246,7 @@ function vehicleIcon(vehicle: SimVehicle) {
                     padding:1px 4px;border-radius:3px;white-space:nowrap;
                     font-family:Inter,sans-serif;pointer-events:none;
                     box-shadow:0 1px 3px rgba(0,0,0,0.4);
-                ">Hız Ayarı (x${speedFactor.toFixed(2)})</div>` : ''}
+                ">${hasBand ? `${bandLow.toFixed(0)}-${bandHigh.toFixed(0)} km/h tut` : `Hız Ayarı (x${speedFactor.toFixed(2)})`}</div>` : ''}
             </div>
         </div>`,
         iconSize: [hitW, hitH],
@@ -251,7 +254,7 @@ function vehicleIcon(vehicle: SimVehicle) {
     });
 }
 
-function stationIcon(name: string, seq: number, isHighlight: boolean = false, slotInfo?: { occupied: number; total: number; approaching: number; queued: number; platformLen: number; rearFree: number }) {
+function stationIcon(name: string, seq: number, isHighlight: boolean = false, slotInfo?: { occupied: number; total: number; approaching: number; queued: number; platformLen: number; rearFree: number; occupiedMeters?: number }) {
     const dotSize = isHighlight ? 14 : 10;
     const color = isHighlight ? '#FF5722' : '#FF9800';
     const fontSize = isHighlight ? '11px' : '10px';
@@ -261,11 +264,13 @@ function stationIcon(name: string, seq: number, isHighlight: boolean = false, sl
     let badgeHtml = '';
     if (slotInfo && slotInfo.total > 0) {
         const { occupied, total, approaching, queued, platformLen, rearFree } = slotInfo;
+        const occMeters = slotInfo.occupiedMeters ?? 0;
         // Doluluk rengi: fiziksel erişilebilir kapasiteye göre
         // rearFree = arkadan girilebilir boş slot sayısı
         const badgeColor = rearFree === 0 && occupied > 0 ? '#F44336' : occupied > 0 ? '#FF9800' : '#4CAF50';
         const approachHtml = approaching > 0 ? `<span style="color:#64B5F6;margin-left:3px;">+${approaching}</span>` : '';
-        // Doluluk: dolu/toplam + arkadan erişilebilir boş slot
+        // Doluluk: dolu/toplam + kaplanan metre + arkadan erişilebilir boş slot
+        const meterInfo = occupied > 0 ? `<span style="color:#FFD54F;margin-left:2px;">${occMeters}m</span>` : '';
         const rearInfo = occupied > 0 ? `<span style="color:#aaa;margin-left:2px;">(↙${rearFree})</span>` : '';
         badgeHtml = `<div style="
             margin-top:1px;padding:1px 5px;border-radius:3px;
@@ -275,7 +280,7 @@ function stationIcon(name: string, seq: number, isHighlight: boolean = false, sl
             display:flex;align-items:center;gap:4px;
         ">
             <span style="color:#aaa;">${platformLen}m</span>
-            <span style="color:${badgeColor};font-weight:bold;">${occupied}/${total}</span>${rearInfo}${approachHtml}
+            <span style="color:${badgeColor};font-weight:bold;">${occupied}/${total}</span>${meterInfo}${rearInfo}${approachHtml}
         </div>`;
     }
 
@@ -380,7 +385,13 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = React.memo(({ vehicle }
             }
         }
         // Tooltip — bind once, update content (DOM overhead yok)
-        const tip = `<b>${vehicle.code}</b> | ${(vehicle.speed * 3.6).toFixed(0)} km/h | ${vehicle.phase}`;
+        const va = vehicle as any;
+        const bLow = va._analytic?.bandLowKmh ?? 0;
+        const bHigh = va._analytic?.bandHighKmh ?? 0;
+        const bandTip = bLow > 0 && bHigh > 0
+            ? `<br><span style="color:#00BCD4;font-weight:700">Hedef: ${bLow.toFixed(0)}-${bHigh.toFixed(0)} km/h</span>`
+            : '';
+        const tip = `<b>${vehicle.code}</b> | ${(vehicle.speed * 3.6).toFixed(0)} km/h | ${vehicle.phase}${bandTip}`;
         if (!m.getTooltip()) {
             m.bindTooltip(tip, { direction: 'top', offset: [0, -10], opacity: 0.95 });
         } else {
@@ -805,6 +816,52 @@ const App: React.FC = () => {
                             <span style={{ fontSize: '10px', color: '#666' }}>({vehicles.length} aktif)</span>
                         </div>
 
+                        {/* === Motor ACIK/KAPALI Toggle (A/B canli izleme) === */}
+                        {(() => {
+                            const engineOn = trainingData.engineEnabled ?? true;
+                            return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', padding: '6px 8px', background: engineOn ? 'rgba(76,175,80,0.10)' : 'rgba(244,67,54,0.10)', borderRadius: '6px', border: `1px solid ${engineOn ? 'rgba(76,175,80,0.4)' : 'rgba(244,67,54,0.4)'}` }}>
+                                    <span style={{ fontSize: '11px', color: '#aaa' }}>Analitik Motor:</span>
+                                    <button
+                                        onClick={() => wsRef.current?.send(JSON.stringify({ action: 'set_engine_enabled', value: !engineOn }))}
+                                        style={{
+                                            padding: '4px 14px', borderRadius: '6px', cursor: 'pointer',
+                                            border: 'none', fontSize: '12px', fontWeight: 700, color: '#fff',
+                                            background: engineOn ? '#4CAF50' : '#F44336', outline: 'none',
+                                        }}
+                                    >
+                                        {engineOn ? 'ACIK' : 'KAPALI'}
+                                    </button>
+                                    <span style={{ fontSize: '10px', color: '#666' }}>
+                                        {engineOn ? 'yonlendirme aktif' : 'serbest (baseline)'}
+                                    </span>
+                                </div>
+                            );
+                        })()}
+
+                        {/* === A/B Karsilastir Toggle (paralel cift sim) === */}
+                        {(() => {
+                            const cmp = trainingData.compare ?? false;
+                            return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', padding: '6px 8px', background: cmp ? 'rgba(156,39,176,0.12)' : 'rgba(255,255,255,0.04)', borderRadius: '6px', border: `1px solid ${cmp ? 'rgba(156,39,176,0.5)' : 'rgba(255,255,255,0.1)'}` }}>
+                                    <span style={{ fontSize: '11px', color: '#aaa' }}>A/B Karsilastir:</span>
+                                    <button
+                                        onClick={() => wsRef.current?.send(JSON.stringify({ action: 'set_compare_mode', value: !cmp }))}
+                                        style={{
+                                            padding: '4px 14px', borderRadius: '6px', cursor: 'pointer',
+                                            border: 'none', fontSize: '12px', fontWeight: 700, color: '#fff',
+                                            background: cmp ? '#9C27B0' : '#555', outline: 'none',
+                                        }}
+                                    >
+                                        {cmp ? 'ACIK' : 'KAPALI'}
+                                    </button>
+                                    <span style={{ fontSize: '10px', color: '#666' }}>
+                                        {cmp ? 'ayni seed, alt seritte' : 'tek sim'}
+                                    </span>
+                                </div>
+                            );
+                        })()}
+
                         {/* === Metrikler (Tooltip aciklamali) === */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '11px', color: '#ccc' }}>
                             <div title="Headway CV (Coefficient of Variation) = standart sapma / ortalama. Araclar arasi zaman araliginin ne kadar duzensiz oldugunu olcer. 0 = mukemmel esit dagilim, <0.3 iyi, >1.0 kotu.">
@@ -892,6 +949,7 @@ const App: React.FC = () => {
                                 overflow: '#F44336',
                                 downstream: '#00BCD4',
                                 queue_cheaper: '#78909C',
+                                expedite_dwell: '#22d3ee',
                             };
 
                             if (allInterventions.length === 0) {
@@ -925,9 +983,15 @@ const App: React.FC = () => {
                                                 <span style={{ color: '#64748b', minWidth: '36px', fontFamily: 'monospace', fontSize: '9px' }}>{vCode}</span>
                                                 <span style={{ color: '#e2e8f0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>{item.stopName}</span>
                                                 <span style={{ color, fontWeight: 700, minWidth: '52px', fontSize: '9px' }}>{iv.reason}</span>
-                                                <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '10px' }}>×{iv.speedFactor.toFixed(2)}</span>
-                                                <span style={{ color: '#94a3b8', fontSize: '9px', whiteSpace: 'nowrap' }}>ETA:{iv.etaToStop}s→{iv.idealArrival}s</span>
-                                                <span style={{ color: iv.queueTimeSaved > 0 ? '#4CAF50' : '#94a3b8', fontWeight: 600, fontSize: '9px', whiteSpace: 'nowrap' }}>+{iv.queueTimeSaved}s</span>
+                                                {iv.reason === 'expedite_dwell' ? (
+                                                    <span style={{ color: '#22d3ee', fontWeight: 700, fontSize: '9px', whiteSpace: 'nowrap', marginLeft: 'auto' }}>Hedef dwell {iv.targetDwell}s</span>
+                                                ) : (
+                                                    <>
+                                                        <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '10px' }}>×{iv.speedFactor.toFixed(2)}</span>
+                                                        <span style={{ color: '#94a3b8', fontSize: '9px', whiteSpace: 'nowrap' }}>ETA:{iv.etaToStop}s→{iv.idealArrival}s</span>
+                                                        <span style={{ color: iv.queueTimeSaved > 0 ? '#4CAF50' : '#94a3b8', fontWeight: 600, fontSize: '9px', whiteSpace: 'nowrap' }}>+{iv.queueTimeSaved}s</span>
+                                                    </>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -1311,14 +1375,19 @@ const App: React.FC = () => {
                     }
 
                     {/* Durak işaretçileri */}
-                    {STATION_LIST.map((s, i) => (
+                    {STATION_LIST.map((s, i) => {
+                        const wsM = trainingData?.stops?.[i];
+                        // Kuyruk durumunu key'e kat → kuyruk boşalınca marker GARANTİ yenilenir
+                        // (react-leaflet divIcon güncellemesi bazen gecikiyordu).
+                        const qFlag = (wsM?.queuedCount ?? 0) > 0 ? 'q' : 'n';
+                        return (
                         <Marker
-                            key={s.code}
+                            key={`${s.code}-${qFlag}`}
                             position={[s.latitude, s.longitude]}
                             icon={stationIcon(s.name, s.sequenceOrder, i % 5 === 0, (() => {
                                 const ws = trainingData?.stops?.[i];
                                 if (!ws) return undefined;
-                                return { occupied: ws.occupiedSlots ?? 0, total: ws.slotCount ?? 0, approaching: ws.approachingCount ?? 0, queued: ws.queuedCount ?? 0, platformLen: ws.platformLengthMeters ?? 0, rearFree: ws.rearFreeSlots ?? 0 };
+                                return { occupied: ws.occupiedSlots ?? 0, total: ws.slotCount ?? 0, approaching: ws.approachingCount ?? 0, queued: ws.queuedCount ?? 0, platformLen: ws.platformLengthMeters ?? 0, rearFree: ws.rearFreeSlots ?? 0, occupiedMeters: ws.occupiedMeters ?? 0 };
                             })())}
                         >
                             <Popup>
@@ -1334,19 +1403,19 @@ const App: React.FC = () => {
                                         const platformLen = wsStop?.platformLengthMeters ?? slot?.platformLengthMeters;
                                         const slotCount = wsStop?.slotCount ?? slot?.slotCount;
                                         const occupied = wsStop?.occupiedSlots ?? 0;
+                                        const occupiedMeters = wsStop?.occupiedMeters ?? 0;
                                         const approaching = wsStop?.approachingCount ?? 0;
                                         const rearFree = wsStop?.rearFreeSlots ?? 0;
                                         const stoppedHere = vehicles.filter(v => v.phase === 'stopped' && Math.abs(v.latitude - s.latitude) < 0.001 && Math.abs(v.longitude - s.longitude) < 0.003);
                                         const queuingHere = vehicles.filter(v => (v as any).isQueuing && Math.abs(v.latitude - s.latitude) < 0.002 && Math.abs(v.longitude - s.longitude) < 0.005);
-                                        const occupancyColor = rearFree === 0 && occupied > 0 ? '#F44336' : occupied > 0 ? '#FF9800' : '#4CAF50';
                                         return (
                                             <>
                                                 {platformLen != null && <div style={{ fontSize: '11px', marginTop: '4px', color: '#76FF03' }}>
                                                     Platform: {platformLen}m | Slot: {slotCount}
                                                 </div>}
                                                 {slotCount != null && <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                                                    <span style={{ color: occupancyColor, fontWeight: 'bold' }}>
-                                                        Doluluk: {occupied}/{slotCount}
+                                                    <span style={{ color: '#FFD54F', fontSize: '10px', fontWeight: 600 }}>
+                                                        {occupiedMeters}m dolu
                                                     </span>
                                                     <span style={{ color: '#aaa', marginLeft: '6px', fontSize: '10px' }}>
                                                         (girilebilir: {rearFree})
@@ -1372,7 +1441,8 @@ const App: React.FC = () => {
                                 </div>
                             </Popup>
                         </Marker>
-                    ))}
+                        );
+                    })}
 
                     {/* Araç işaretçileri — pozisyon imperatively güncellenir */}
                     {vehicles.map(v => (
@@ -1399,6 +1469,99 @@ const App: React.FC = () => {
                     })}
                 </MapContainer>
 
+                {/* === A/B Test Ekrani: yatay ikiye bolunmus cift hat === */}
+                {trainingData?.compare && (() => {
+                    const routeLen = trainingData.routeLength || 1;
+                    const onV = trainingData.vehicles || [];
+                    const offV = trainingData.compareOff?.vehicles || [];
+                    const stops = trainingData.stops || [];
+                    const selId = selectedVehicleKey?.id ?? null;
+                    const onSel = onV.find((v: any) => v.id === selId);
+                    const offSel = offV.find((v: any) => v.id === selId);
+                    const delta = (onSel && offSel) ? (onSel.positionMeters - offSel.positionMeters) : null;
+                    const pctOf = (m: number) => Math.max(0, Math.min(100, (m / routeLen) * 100));
+                    const onCompleted = onV.reduce((a: number, v: any) => a + (v._trip?.completedTrips || 0), 0);
+                    const offCompleted = offV.reduce((a: number, v: any) => a + (v.completedTrips || 0), 0);
+
+                    const stat = (vehs: any[]) => {
+                        const n = vehs.length;
+                        const avg = n ? vehs.reduce((a, v) => a + (v.speed || 0), 0) / n : 0;
+                        const queued = vehs.filter((v) => v.phase === 'queued').length;
+                        const stopped = vehs.filter((v) => ['stopped', 'doorsClosed', 'blocked', 'docking'].includes(v.phase)).length;
+                        return { n, avg, queued, stopped };
+                    };
+
+                    const Pane = (label: string, vehs: any[], accent: string, completed: number) => {
+                        const s = stat(vehs);
+                        return (
+                            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '6px 12px', background: 'rgba(0,0,0,0.35)', borderBottom: `2px solid ${accent}` }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 800, color: accent, letterSpacing: '0.5px' }}>{label}</span>
+                                    <span style={{ fontSize: '11px', color: '#bbb' }}>araç <b style={{ color: '#fff' }}>{s.n}</b></span>
+                                    <span style={{ fontSize: '11px', color: '#bbb' }}>ort. hız <b style={{ color: '#fff' }}>{s.avg.toFixed(1)}</b> m/s</span>
+                                    <span style={{ fontSize: '11px', color: '#bbb' }}>kuyrukta <b style={{ color: s.queued > 0 ? '#F44336' : '#4CAF50' }}>{s.queued}</b></span>
+                                    <span style={{ fontSize: '11px', color: '#bbb' }}>durakta <b style={{ color: '#fff' }}>{s.stopped}</b></span>
+                                    <span style={{ fontSize: '11px', color: '#bbb' }}>tamamlanan sefer <b style={{ color: '#fff' }}>{completed}</b></span>
+                                </div>
+                                <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                                    {stops.map((st: any) => (
+                                        <div key={st.index} style={{ position: 'absolute', left: `${pctOf(st.meterPosition)}%`, top: '20%', bottom: '20%', width: '1px', background: 'rgba(255,255,255,0.10)' }} />
+                                    ))}
+                                    <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: '2px', background: 'rgba(255,255,255,0.18)' }} />
+                                    {vehs.map((v: any) => {
+                                        const sel = v.id === selId;
+                                        return (
+                                            <div key={v.id}
+                                                onClick={() => setSelectedVehicleKey({ id: v.id, direction: 'gidis' })}
+                                                title={`#${v.id} · ${v.phase} · ${Math.round(v.positionMeters)}m · ${(v.speed || 0).toFixed(1)} m/s`}
+                                                style={{
+                                                    position: 'absolute', left: `${pctOf(v.positionMeters)}%`, top: '50%',
+                                                    transform: 'translate(-50%,-50%)',
+                                                    width: sel ? '18px' : '11px', height: sel ? '18px' : '11px',
+                                                    borderRadius: '50%', background: phaseColor(v),
+                                                    border: sel ? '3px solid #fff' : '1px solid rgba(0,0,0,0.5)',
+                                                    cursor: 'pointer', zIndex: sel ? 5 : 2,
+                                                    boxShadow: sel ? '0 0 10px #fff' : '0 1px 2px rgba(0,0,0,0.5)',
+                                                }} />
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    };
+
+                    return (
+                        <div style={{
+                            position: 'absolute', inset: 0, zIndex: 1100,
+                            background: 'rgba(12,16,24,0.97)', display: 'flex', flexDirection: 'column',
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: 'rgba(156,39,176,0.15)', borderBottom: '1px solid rgba(156,39,176,0.4)' }}>
+                                <span style={{ fontSize: '12px', color: '#ce93d8', fontWeight: 700 }}>A/B TEST — aynı seed · rota boyunca konum (sol→sağ)</span>
+                                {selId != null && onSel && offSel ? (
+                                    <span style={{ fontSize: '12px', color: '#fff' }}>
+                                        #{selId}: <b style={{ color: '#4CAF50' }}>{Math.round(onSel.positionMeters)}m</b> vs <b style={{ color: '#F44336' }}>{Math.round(offSel.positionMeters)}m</b> ·{' '}
+                                        <b style={{ color: (delta ?? 0) >= 0 ? '#4CAF50' : '#F44336' }}>Δ {Math.round(delta ?? 0)}m {(delta ?? 0) >= 0 ? 'ileride' : 'geride'}</b>
+                                    </span>
+                                ) : (
+                                    <span style={{ fontSize: '11px', color: '#888' }}>bir otobüse tıkla → iki hatta da işaretlenir</span>
+                                )}
+                            </div>
+                            {/* Üst hat: MOTORLU */}
+                            {Pane('MOTORLU', onV, '#4CAF50', onCompleted)}
+                            <div style={{ height: '2px', background: 'rgba(156,39,176,0.5)' }} />
+                            {/* Alt hat: MOTORSUZ */}
+                            {Pane('MOTORSUZ', offV, '#F44336', offCompleted)}
+                            {/* Seçili otobüsü iki hat arasında bağlayan çizgi */}
+                            {selId != null && onSel && offSel && (
+                                <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 6 }} width="100%" height="100%">
+                                    <line x1={`${pctOf(onSel.positionMeters)}%`} y1="38%" x2={`${pctOf(offSel.positionMeters)}%`} y2="78%"
+                                        stroke="#fff" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.7" />
+                                </svg>
+                            )}
+                        </div>
+                    );
+                })()}
+
                 {/* Seçili araç detay paneli */}
                 {activeVehicle && (
                     <div className="detail-panel">
@@ -1421,6 +1584,19 @@ const App: React.FC = () => {
                                 <span className="detail-label">Hız</span>
                                 <span className="detail-value">{(activeVehicle.speed * 3.6).toFixed(1)} km/h</span>
                             </div>
+                            {(() => {
+                                const bLow = (activeVehicle as any)._analytic?.bandLowKmh ?? 0;
+                                const bHigh = (activeVehicle as any)._analytic?.bandHighKmh ?? 0;
+                                if (!(bLow > 0 && bHigh > 0)) return null;
+                                return (
+                                    <div className="detail-row">
+                                        <span className="detail-label">Hedef Hız Bandı</span>
+                                        <span className="detail-value" style={{ color: '#00BCD4', fontWeight: 700 }}>
+                                            {bLow.toFixed(0)}–{bHigh.toFixed(0)} km/h
+                                        </span>
+                                    </div>
+                                );
+                            })()}
                             <div className="detail-row">
                                 <span className="detail-label">İvme</span>
                                 <span className="detail-value">{activeVehicle.acceleration.toFixed(2)} m/s²</span>
@@ -2006,8 +2182,10 @@ const App: React.FC = () => {
                                                         overflow: '#ef4444',
                                                         downstream: '#00BCD4',
                                                         queue_cheaper: '#78909C',
+                                                        expedite_dwell: '#22d3ee',
                                                     };
                                                     const rc = reasonColorMap[iv.reason] ?? '#94a3b8';
+                                                    const isExpedite = iv.reason === 'expedite_dwell';
                                                     const sfPct = Math.round((1 - iv.speedFactor) * 100);
                                                     const vCode = `AM-${String(iv.vehicleId).padStart(2, '0')}`;
                                                     return (
@@ -2025,20 +2203,30 @@ const App: React.FC = () => {
                                                                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#e2e8f0', fontFamily: 'monospace' }}>{vCode}</span>
                                                                 <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '8px', background: `${rc}22`, color: rc }}>{iv.reason}</span>
                                                             </div>
-                                                            {/* Speed factor bar */}
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                                                <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>×{iv.speedFactor.toFixed(2)}</span>
-                                                                <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.07)', borderRadius: '3px', overflow: 'hidden' }}>
-                                                                    <div style={{ width: `${sfPct}%`, height: '100%', background: '#f59e0b', borderRadius: '3px' }} />
+                                                            {isExpedite ? (
+                                                                /* Dwell expedite: hedef dwell göster (slot taşması nedeniyle) */
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#64748b' }}>
+                                                                    <span>Dwell kısaltma → <b style={{ color: '#22d3ee' }}>{iv.targetDwell}s</b></span>
+                                                                    <span style={{ color: '#22d3ee', fontWeight: 700 }}>slot boşalt</span>
                                                                 </div>
-                                                                <span style={{ fontSize: '9px', color: '#64748b' }}>{sfPct}% yavaş</span>
-                                                            </div>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
-                                                                <span>ETA <b style={{ color: '#94a3b8' }}>{iv.etaToStop}s</b> → İdeal <b style={{ color: '#00BCD4' }}>{iv.idealArrival}s</b></span>
-                                                                <span style={{ color: iv.netBenefit > 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
-                                                                    {iv.netBenefit > 0 ? '+' : ''}{iv.netBenefit.toFixed(1)} fayda
-                                                                </span>
-                                                            </div>
+                                                            ) : (
+                                                                <>
+                                                                    {/* Speed factor bar */}
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                                        <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>×{iv.speedFactor.toFixed(2)}</span>
+                                                                        <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.07)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                                            <div style={{ width: `${sfPct}%`, height: '100%', background: '#f59e0b', borderRadius: '3px' }} />
+                                                                        </div>
+                                                                        <span style={{ fontSize: '9px', color: '#64748b' }}>{sfPct}% yavaş</span>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
+                                                                        <span>ETA <b style={{ color: '#94a3b8' }}>{iv.etaToStop}s</b> → İdeal <b style={{ color: '#00BCD4' }}>{iv.idealArrival}s</b></span>
+                                                                        <span style={{ color: iv.netBenefit > 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                                                                            {iv.netBenefit > 0 ? '+' : ''}{iv.netBenefit.toFixed(1)} fayda
+                                                                        </span>
+                                                                    </div>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}

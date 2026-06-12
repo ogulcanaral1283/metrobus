@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 try:
-    from ..config import SimVehicle, VEHICLE_LENGTH
+    from ..config import SimVehicle, VEHICLE_LENGTH, DEFAULT_CONFIG
     from ..route_data import LinearStop
     from .stop_interface import StopInterface, StopZoneState
     from .station_arrival_scheduler import (
@@ -46,8 +46,9 @@ try:
         DEPARTURE_OVERHEAD,
         SLOT_BUFFER_SECONDS,
     )
+    from .dock_projection import project_dock
 except ImportError:
-    from config import SimVehicle, VEHICLE_LENGTH
+    from config import SimVehicle, VEHICLE_LENGTH, DEFAULT_CONFIG
     from route_data import LinearStop
     from stop_interface import StopInterface, StopZoneState
     from station_arrival_scheduler import (
@@ -56,6 +57,7 @@ except ImportError:
         DEPARTURE_OVERHEAD,
         SLOT_BUFFER_SECONDS,
     )
+    from dock_projection import project_dock
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -82,16 +84,17 @@ DOWNSTREAM_PRESSURE_WEIGHT: float = 8.0
 # Cascade yoksa bile bu kadar queue beklenmesi halinde müdahale et
 MIN_QUEUE_TO_INTERVENE: float = 2.0
 
-# [FIX-5] Histerezis tamponu (sn) — salınımı önler
-# ETA bu kadar erken olmadıkça müdahale başlatma
-INTERVENTION_THRESHOLD: float = 2.0
-
 # [FIX-4] Cascade lookahead penceresi (sn)
 # Slot doluyken bu süre içinde gelebilecek araçlar cascade'e dahil edilir
 CASCADE_WINDOW: float = 30.0
 
+# [DWELL-EXPEDITE] Taşma başına dwell kısaltma oranı (yumuşak)
+# target_dwell = nominal - min(1, overflow*EXPEDITE_STEP) * (nominal - min_dwell)
+# overflow=1 → küçük kısaltma, tabana (min_dwell) inmek için overflow≥3 gerekir.
+EXPEDITE_STEP: float = 0.33
+
 # [FIX-2] Fiziksel slot hesabı sabitleri (station_fsm.py ile senkron)
-_SLOT_SIZE: float = 25.0   # VEHICLE_LENGTH(20) + VEHICLE_GAP_METERS(5)
+_SLOT_SIZE: float = 20.5   # VEHICLE_LENGTH(20) + VEHICLE_GAP_METERS(0.5)
 _BUS_LENGTH: float = 20.0
 _SAFE_GAP: float = 0.5
 
@@ -120,6 +123,20 @@ class SpeedRecommendation:
     stop_index: int = 0         # hedef durağın index'i
 
 
+@dataclass
+class DwellRecommendation:
+    """Durakta operasyon yapan (stopped) araç için dwell kısaltma önerisi.
+
+    Slot taşması varken üretilir: aracın kalan dwell'ini daha erken
+    boşaltacak şekilde sınırlar (asla uzatmaz, min_dwell tabanına saygılı).
+    """
+    vehicle_id: int
+    dwell_cap: float            # dwell_remaining bu değerle sınırlanır (sn)
+    target_dwell: float         # baskıya göre hedeflenen toplam dwell (sn)
+    overflow_count: int         # tetikleyen taşma miktarı
+    stop_index: int = 0
+
+
 # ═══════════════════════════════════════════════════════════════════
 # SmartStop
 # ═══════════════════════════════════════════════════════════════════
@@ -139,7 +156,7 @@ class SmartStop:
         zone_start: float,
         interface: StopInterface,
         approach_distance: float = 150.0,
-        comfort_braking: float = 2.0,
+        comfort_braking: float = 3.5,
         max_speed: float = 25.0,
     ) -> None:
         self.stop = stop
@@ -159,19 +176,21 @@ class SmartStop:
         vehicles: List[SimVehicle],
         is_rush_hour: bool,
         sim_time: float,
-    ) -> List[SpeedRecommendation]:
+    ) -> Tuple[List[SpeedRecommendation], List["DwellRecommendation"]]:
         """
-        Bölgeyi güncelle, hız önerileri üret, durumu yayınla.
+        Bölgeyi güncelle, hız ve dwell önerileri üret, durumu yayınla.
 
         Akış:
             1. Bölgedeki araçları tespit et
             2. Platform slot timeline oluştur
             3. Downstream baskıyı interface'den oku
-            4. Her araç için kost-fayda analizi → SpeedRecommendation
+            4. Her zone aracı için kost-fayda analizi → SpeedRecommendation
             5. Durumu interface'e yayınla
+            6. Taşma varsa stopped araçlar için dwell kısaltma → DwellRecommendation
 
         Returns:
-            Her bölge aracı için bir SpeedRecommendation listesi.
+            (hız önerileri, dwell önerileri) — dwell önerileri yalnızca taşma
+            varken ve aracın dwell'i gerçekten kısalacaksa üretilir.
         """
         zone_buses     = self._buses_in_zone(vehicles)
         platform_buses = self._buses_on_platform(vehicles)
@@ -215,10 +234,60 @@ class SmartStop:
             )  # arrival_eta = actual_eta (gerçek ETA, yavaşlatılmış değil)
 
         # Durumu interface'e yayınla
-        state = self._build_state(zone_buses, platform_buses, slot_timeline, sim_time)
+        state = self._build_state(
+            zone_buses, platform_buses, slot_timeline, sim_time, is_rush_hour,
+        )
         self.interface.publish(self.stop.index, state)
 
-        return recommendations
+        # Durakta operasyon yapan araçlar için dwell kısaltma önerileri
+        dwell_recs = self._compute_dwell_recs(
+            platform_buses, state.overflow_count, is_rush_hour,
+        )
+
+        return recommendations, dwell_recs
+
+    # ──────────────────────────────────────────────────────────────
+    # Dwell Expedite (durakta operasyon yapan araçlar)
+    # ──────────────────────────────────────────────────────────────
+
+    def _compute_dwell_recs(
+        self,
+        platform_buses: List[SimVehicle],
+        overflow_count: int,
+        is_rush_hour: bool,
+    ) -> List["DwellRecommendation"]:
+        """Slot taşması varken stopped araçlar için dwell kısaltma üret.
+
+        target_dwell baskıyla nominal'den min_dwell tabanına iner. Her araç
+        için CANLI dwell_remaining'e karşı sınır uygulanır (asla uzatmaz,
+        zaten geçen süreyi kesmez). Slot timeline canlı dwell_remaining okuduğu
+        için tahmin == gerçek tutarlılığı korunur.
+        """
+        if overflow_count <= 0:
+            return []
+
+        nominal = estimate_dwell(self.stop, is_rush_hour)
+        floor   = DEFAULT_CONFIG.min_dwell_time
+        frac    = min(1.0, overflow_count * EXPEDITE_STEP)
+        target_dwell = max(floor, nominal - frac * (nominal - floor))
+
+        recs: List["DwellRecommendation"] = []
+        for bus in platform_buses:
+            if bus.phase != "stopped":
+                continue
+            elapsed           = bus.last_dwell_time - bus.dwell_remaining
+            allowed_remaining = max(0.0, target_dwell - elapsed)
+            dwell_cap         = min(bus.dwell_remaining, allowed_remaining)
+            # Yalnızca gerçekten kısaltma varsa öneri üret
+            if dwell_cap < bus.dwell_remaining:
+                recs.append(DwellRecommendation(
+                    vehicle_id=bus.id,
+                    dwell_cap=dwell_cap,
+                    target_dwell=target_dwell,
+                    overflow_count=overflow_count,
+                    stop_index=self.stop.index,
+                ))
+        return recs
 
     # ──────────────────────────────────────────────────────────────
     # Araç Filtreleme
@@ -342,25 +411,52 @@ class SmartStop:
                 stop_index=self.stop.index,
             )
 
-        # ── 2. ETA hesabı ─────────────────────────────────────────
-        eta = compute_eta(distance, bus.speed, self.approach_distance, self.comfort_braking)
-
-        # ── 3. En erken boş slot ──────────────────────────────────
+        # ── 2. Slot durumu ────────────────────────────────────────
         if not slot_timeline:
             return SpeedRecommendation(
                 vehicle_id=bus.id, speed_factor=1.0,
                 source="none", reason="on_time",
-                eta_to_stop=eta, ideal_arrival=0.0,
+                eta_to_stop=0.0, ideal_arrival=0.0,
                 queue_time_avoided=0.0, net_benefit=0.0,
                 stop_index=self.stop.index,
             )
 
-        slot_id, slot_free_time, _ = min(slot_timeline, key=lambda x: x[1])
-        ideal_arrival = slot_free_time + SLOT_BUFFER_SECONDS
+        capacity       = max(self.stop.slot_count, 1)
+        # Dolu/rezerve slotların boşalma anları (boş slotlar ft=0 → hariç)
+        releases       = [ft for (_sid, ft, _vid) in slot_timeline if ft > 1e-9]
+        slot_free_time = min(releases) if releases else 0.0
 
-        # [FIX-5] Histerezis: sadece araç INTERVENTION_THRESHOLD'dan daha erken
-        # geliyorsa müdahale başlat. Küçük farklarda salınımı önler.
-        if eta >= ideal_arrival - INTERVENTION_THRESHOLD:
+        # ── 3. Peron DOLU değilse → kuyruk yok, akıp geçer ─────────
+        # Arkadan erişilebilir boş slot var: yeni gelen otobüs beklemeden
+        # arkadaki ilk boş slota kenetlenir. Önceki SABİT-peron modeli bu
+        # durumda da "erken geldin" deyip gereksiz yavaşlatabiliyordu (kusur).
+        if len(releases) < capacity:
+            eta = compute_eta(distance, bus.speed,
+                              self.approach_distance, self.comfort_braking)
+            return SpeedRecommendation(
+                vehicle_id=bus.id, speed_factor=1.0,
+                source="none", reason="on_time",
+                eta_to_stop=eta, ideal_arrival=slot_free_time + SLOT_BUFFER_SECONDS,
+                queue_time_avoided=0.0, net_benefit=0.0,
+                stop_index=self.stop.index,
+            )
+
+        # ── 4. Peron DOLU → dock projeksiyonu (uzay-zaman kuyruk) ──
+        # ETA artık SABİT peron önüne değil GERİ ÇEKİLEN kuyruk ucuna ölçülür.
+        # İki hareketli cephe (otobüs yörüngesi + boşalan kuyruk ucu) kesişimi
+        # gerçek kenetlenme anını ve uçta beklenecek süreyi verir.
+        dock = project_dock(
+            bus.position_meters, max(bus.speed, 0.1), releases,
+            stop_front=self.zone_end,
+            capacity=capacity,
+            slot_spacing=_SLOT_SIZE,
+        )
+        eta           = dock.free_flow_time   # engelsiz olsa varış süresi
+        ideal_arrival = dock.dock_time        # gerçek kenetlenme anı
+        queue_time    = dock.queue_time       # uçta beklenecek gerçek süre
+
+        # Histerezis: otobüs durmadan akıp geçecekse (kuyruk ~0) dokunma
+        if dock.flowed_through:
             return SpeedRecommendation(
                 vehicle_id=bus.id, speed_factor=1.0,
                 source="none", reason="on_time",
@@ -369,9 +465,7 @@ class SmartStop:
                 stop_index=self.stop.index,
             )
 
-        # ── 4. Kost-Fayda Analizi ─────────────────────────────────
-        queue_time = ideal_arrival - eta  # müdahalesiz bekleme süresi
-
+        # ── 5. Kost-Fayda Analizi ─────────────────────────────────
         # [FIX-4] Cascade: sadece slot DOLUYKEN gelebilecek araçları say
         # Uzaktaki araçlar slot boşaldıktan sonra gelecek → cascade etkileri yok
         relevant_following = [
@@ -471,6 +565,7 @@ class SmartStop:
         platform_buses: List[SimVehicle],
         slot_timeline: List[Tuple[int, float, Optional[int]]],
         sim_time: float,
+        is_rush_hour: bool,
     ) -> StopZoneState:
         """Interface'e yayınlanacak durum nesnesini oluştur."""
         # Faz sayımı
@@ -492,10 +587,18 @@ class SmartStop:
         # Slot metrikleri
         occupied   = sum(1 for _, _, vid in slot_timeline if vid is not None)
         total_cap  = max(self.stop.slot_count, 1)
-        approaching = len(zone_buses)
+        total_in_zone = len(zone_buses)
 
-        congestion     = (occupied + approaching) / total_cap
-        overflow_count = max(0, occupied + approaching - total_cap)
+        # [FIX-3] Tıkanıklık/taşma yalnızca GERÇEKTEN yaklaşan araçları saymalı.
+        # Bütün ~1km'lik bölgedeki araçları "platform baskısı" saymak metriği
+        # şişiriyordu. Eşik = platform devir süresi (dwell + kalkış overhead'i):
+        # bu süre içinde varacak araç slot için gerçekten yarışır, daha uzaktaki
+        # araç ise slot boşaldıktan sonra gelir → baskı değildir.
+        pressure_horizon = estimate_dwell(self.stop, is_rush_hour) + DEPARTURE_OVERHEAD
+        approaching_near = sum(1 for eta in incoming_etas if eta <= pressure_horizon)
+
+        congestion     = (occupied + approaching_near) / total_cap
+        overflow_count = max(0, occupied + approaching_near - total_cap)
 
         # Komşu baskı metrikleri
         downstream_pressure = self.interface.get_downstream_pressure(self.stop.index)
@@ -504,7 +607,7 @@ class SmartStop:
         return StopZoneState(
             stop_index=self.stop.index,
             stop_name=self.stop.name,
-            vehicles_in_zone=approaching,
+            vehicles_in_zone=total_in_zone,
             phase_counts=phase_counts,
             occupied_slots=occupied,
             slot_capacity=total_cap,
@@ -546,7 +649,7 @@ def build_smart_stops(
     stops: List[LinearStop],
     interface: StopInterface,
     approach_distance: float = 150.0,
-    comfort_braking: float = 2.0,
+    comfort_braking: float = 3.5,
     max_speed: float = 25.0,
 ) -> List[SmartStop]:
     """

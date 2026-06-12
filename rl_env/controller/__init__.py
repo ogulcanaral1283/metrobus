@@ -9,7 +9,7 @@ Mimari:
 
 Destek:
   HeadwayModel     — Headway dinamiği (yalnızca metrik / dashboard)
-  PIDController    — Yedek (geriye uyumluluk)
+  PIDController    — Stub (yalnızca dashboard kazanç gösterimi)
 """
 
 from .headway_model import HeadwayModel, HeadwayState
@@ -22,7 +22,7 @@ __all__ = [
     # Headway (metrik)
     "HeadwayModel",
     "HeadwayState",
-    # PID (yedek)
+    # PID (stub — dashboard kazancı)
     "PIDController",
     # SmartStop sistemi
     "StopInterface",

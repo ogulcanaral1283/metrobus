@@ -206,7 +206,13 @@ class SimManager:
             pid=self.pid,
             min_gap=25.0,
             vehicle_length=VEHICLE_LENGTH,
+            comfort_braking=self.config.comfort_braking,
+            max_speed=self.config.max_speed,
+            approach_distance=self.config.approach_distance,
         )
+
+        # Motor (analitik kontrolcu) acik/kapali — dashboard'dan canli toggle
+        self.engine_enabled = True
 
     def _calibrate_stops_to_platforms(self, direction: str):
         """Platform giris noktalarini kullanarak durak metre pozisyonlarini kalibre et."""
@@ -374,9 +380,17 @@ class SimManager:
         wrap_threshold = min(last_stop_pos + 100, self._seg_end_threshold)
         for veh in self.vehicles:
             cmd = commands.get(veh.id)
-            if cmd:
+            if cmd and self.engine_enabled:
                 if cmd.hold_time > 0 and veh.phase in ("stopped", "doorsClosed"):
                     veh.holding_extra = max(veh.holding_extra, cmd.hold_time)
+                if cmd.dwell_cap >= 0.0 and veh.phase == "stopped":
+                    # Cap'i uygularken last_dwell_time'i da ayni miktarda dusur:
+                    # aksi halde controller'in elapsed=last_dwell_time-dwell_remaining
+                    # hesabi kesme miktarini "gecen sure" sanip her tick daha cok keser
+                    # ve dwell ~0'a coker (runaway). Bu, elapsed kimligini korur.
+                    new_rem = min(veh.dwell_remaining, cmd.dwell_cap)
+                    veh.last_dwell_time -= (veh.dwell_remaining - new_rem)
+                    veh.dwell_remaining = new_rem
                 if cmd.skip_stop:
                     veh.skip_next_stop = True
 
@@ -385,7 +399,7 @@ class SimManager:
                 self.traffic_zones, self.route_length,
             )
 
-            if cmd and cmd.speed_factor != 1.0:
+            if cmd and self.engine_enabled and cmd.speed_factor != 1.0:
                 target_speed *= cmd.speed_factor
 
             leader = self._find_leader(veh, sorted_v)
@@ -694,6 +708,8 @@ class SimManager:
                     "headway": round(hs_state.time_headway, 1) if hs_state else 0,
                     "headwayError": round(hs_state.headway_error, 1) if hs_state else 0,
                     "speedFactor": round(cmd.speed_factor, 2) if cmd else 1.0,
+                    "bandLowKmh": round(cmd.band_low, 0) if cmd else 0,
+                    "bandHighKmh": round(cmd.band_high, 0) if cmd else 0,
                     "source": cmd.source if cmd else "none",
                     "overflowRisk": round(cmd.overflow_risk, 2) if cmd else 0,
                     "isInsidePlatform": is_inside_platform_zone(veh.position_meters, 20.0, self.stops[veh.next_stop_index]) if veh.next_stop_index < len(self.stops) else False,
@@ -729,14 +745,28 @@ class SimManager:
         occupied_by_stop: dict[int, int] = {}
         approaching_by_stop: dict[int, int] = {}
         queued_by_stop: dict[int, int] = {}
+        # KULLANILAMAYAN uzunluk: peron ön kenarından (meter_position) en arkadaki
+        # aracın ARKASINA kadar. Araçlar arkadan girip öne ilerlediği için öndeki
+        # boş slotlar erişilemez → onlar da "dolu" sayılır. Kullanılabilir alan =
+        # platform_len - occupiedMeters. (ör. 2. slotta araç, ön boş → ön slot da dolu.)
+        plat_rears: dict[int, float] = {}
         for v in self.vehicles:
             si = v.next_stop_index
             if v.phase in ("stopped", "doorsClosed", "blocked", "docking"):
                 occupied_by_stop[si] = occupied_by_stop.get(si, 0) + 1
+                rear = v.position_meters - VEHICLE_LENGTH
+                if si not in plat_rears or rear < plat_rears[si]:
+                    plat_rears[si] = rear
             elif v.phase == "queued":
                 queued_by_stop[si] = queued_by_stop.get(si, 0) + 1
             elif v.phase == "approaching":
                 approaching_by_stop[si] = approaching_by_stop.get(si, 0) + 1
+
+        def _occupied_meters(stop) -> float:
+            si = stop.index
+            if si in plat_rears:
+                return round(max(0.0, stop.meter_position - plat_rears[si]), 1)
+            return 0.0
 
         stops_json = [
             {
@@ -746,6 +776,7 @@ class SimManager:
                 "platformLengthMeters": round(s.platform_length_meters, 0),
                 "slotCount": s.slot_count,
                 "occupiedSlots": occupied_by_stop.get(s.index, 0),
+                "occupiedMeters": _occupied_meters(s),
                 "approachingCount": approaching_by_stop.get(s.index, 0),
                 "queuedCount": queued_by_stop.get(s.index, 0),
                 "rearFreeSlots": compute_rear_free_slots(s, self.vehicles),
@@ -780,6 +811,8 @@ class SimManager:
             "trafficZones": traffic_json,
             "isRushHour": is_rush,
             "running": True,
+            "engineEnabled": self.engine_enabled,
+            "routeLength": round(self.route_length, 1),
             "timeScale": self.time_scale,
             "activeSegment": active_segment,
             # Analitik motor metrikleri
@@ -806,7 +839,7 @@ class SimManager:
 # ============================================
 
 WS_PORT = 8765
-SIM_TICK = 0.05       # 50ms — fizik motoru her zaman 20 Hz çalışır
+SIM_TICK = 0.1        # 100ms — fizik motoru gerçek zamanlı (DT ile senkron)
 WS_SEND_INTERVAL = 0.1  # 100ms = 10 FPS dashboard güncellemesi
 
 
@@ -814,15 +847,31 @@ async def simulation_handler(websocket):
     """Tek bir dashboard baglantisi icin simulasyon dongusu."""
     print(f"[WS] Dashboard baglandi: {websocket.remote_address}")
 
+    COMPARE_SEED = 42
+
+    def build_pair(count):
+        """Ayni seed ile iki ozdes sim: biri motor ACIK, biri KAPALI."""
+        s_on = SimManager(vehicle_count=count, direction="gidis",
+                          start_hour=7.0, time_scale=1.0, seed=COMPARE_SEED)
+        s_off = SimManager(vehicle_count=count, direction="gidis",
+                           start_hour=7.0, time_scale=1.0, seed=COMPARE_SEED)
+        s_on.engine_enabled = True
+        s_off.engine_enabled = False
+        return s_on, s_off
+
     sim = SimManager(
         vehicle_count=30,
         direction="gidis",
         start_hour=7.0,
-        time_scale=5.0,
+        time_scale=1.0,
     )
+    sim_off = None       # compare modunda motor-KAPALI ikiz
+    compare = False
+    cur_count = 30
 
     async def listen_commands():
         """Dashboard'dan gelen komutlari dinle."""
+        nonlocal sim, sim_off, compare, cur_count
         try:
             async for message in websocket:
                 try:
@@ -830,16 +879,44 @@ async def simulation_handler(websocket):
                     action = cmd.get("action")
                     if action == "add_vehicle":
                         sim.add_vehicle()
+                        if compare and sim_off:
+                            sim_off.add_vehicle()
+                        cur_count = len(sim.vehicles)
                     elif action == "remove_vehicle":
                         sim.remove_vehicle()
+                        if compare and sim_off:
+                            sim_off.remove_vehicle()
+                        cur_count = len(sim.vehicles)
                     elif action == "set_vehicle_count":
-                        sim.set_vehicle_count(int(cmd.get("value", 15)))
+                        cur_count = int(cmd.get("value", 15))
+                        if compare:
+                            # Ozdes baslangic icin ikisini de yeniden kur
+                            sim, sim_off = build_pair(cur_count)
+                        else:
+                            sim.set_vehicle_count(cur_count)
                     elif action == "set_time_scale":
                         sim.set_time_scale(cmd.get("value", 5.0))
+                        if compare and sim_off:
+                            sim_off.set_time_scale(cmd.get("value", 5.0))
                     elif action == "set_route_segment":
-                        sim.set_route_segment(int(cmd.get("start", 0)), int(cmd.get("end", len(sim.stops) - 1)))
+                        s, e = int(cmd.get("start", 0)), int(cmd.get("end", len(sim.stops) - 1))
+                        sim.set_route_segment(s, e)
+                        if compare and sim_off:
+                            sim_off.set_route_segment(s, e)
                     elif action == "reset_route_segment":
                         sim.reset_route_segment()
+                        if compare and sim_off:
+                            sim_off.reset_route_segment()
+                    elif action == "set_engine_enabled":
+                        sim.engine_enabled = bool(cmd.get("value", True))
+                    elif action == "set_compare_mode":
+                        compare = bool(cmd.get("value", False))
+                        if compare:
+                            # Ayni seed ile sifirdan ozdes cift baslat
+                            sim, sim_off = build_pair(cur_count)
+                        else:
+                            # Tek-sim moduna don: ACIK sim'i koru
+                            sim_off = None
                     if action:
                         print(f"[CMD] {action} islendi")
                 except json.JSONDecodeError:
@@ -853,17 +930,37 @@ async def simulation_handler(websocket):
 
     async def send_state():
         """Simulasyon state'ini periyodik gonder.
-        Fizik motoru SIM_TICK (50ms) hızında çalışır,
-        dashboard güncellemesi WS_SEND_INTERVAL (200ms = 5 FPS) hızında gönderilir.
+        Fizik motoru SIM_TICK (100ms) hızında çalışır,
+        dashboard güncellemesi WS_SEND_INTERVAL (100ms = 10 FPS) hızında gönderilir.
         """
+        nonlocal sim, sim_off, compare
         try:
             send_accumulator = 0.0
             while True:
                 sim.tick(SIM_TICK)
+                if compare and sim_off:
+                    sim_off.tick(SIM_TICK)
                 send_accumulator += SIM_TICK
                 if send_accumulator >= WS_SEND_INTERVAL:
                     send_accumulator = 0.0
                     state = sim.get_dashboard_state()
+                    if compare and sim_off:
+                        state["compare"] = True
+                        state["compareOff"] = {
+                            "time": round(sim_off.sim_time, 1),
+                            "vehicles": [
+                                {
+                                    "id": v.id,
+                                    "positionMeters": round(v.position_meters, 1),
+                                    "speed": round(v.speed, 2),
+                                    "phase": v.phase,
+                                    "direction": v.direction,
+                                    "completedTrips": v.trip_completed_count,
+                                    "tripElapsed": round(sim_off.sim_time - v.trip_start_time, 1),
+                                }
+                                for v in sim_off.vehicles
+                            ],
+                        }
                     await websocket.send(json.dumps(state, ensure_ascii=False))
                 await asyncio.sleep(SIM_TICK)
         except Exception as e:

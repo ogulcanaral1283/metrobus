@@ -28,9 +28,9 @@ class SimConfig:
     """Simülasyon konfigürasyonu — TypeScript SimConfig interface karşılığı."""
 
     # === Fizik ===
-    max_acceleration: float = 1.0       # m/s²
-    comfort_braking: float = 2.0        # m/s²
-    emergency_braking: float = 4.5      # m/s²
+    max_acceleration: float = 2.5       # m/s²  (0→90 km/h ~10sn)
+    comfort_braking: float = 3.5        # m/s²
+    emergency_braking: float = 6.0      # m/s²
     max_speed: float = 25.0             # m/s (90 km/h — maksimum sınır)
 
     # === IDM ===
@@ -48,7 +48,7 @@ class SimConfig:
     traffic_duration: float = 120.0     # saniye
 
     # === Hız limiti ===
-    default_speed_limit: float = 12.5   # m/s (~45 km/h)
+    default_speed_limit: float = 25.0   # m/s (90 km/h — max_speed ile senkron)
 
     # === Genel ===
     vehicle_count: int = 15
