@@ -35,7 +35,6 @@ from rl_env.physics import compute_target_speed, update_vehicle_physics
 from rl_env.station_fsm import update_station_fsm, compute_rear_free_slots, is_inside_platform_zone
 from rl_env.traffic import update_traffic_zones
 from rl_env.controller.headway_model import HeadwayModel
-from rl_env.controller.pid_controller import PIDController
 from rl_env.controller.control_merger import ControlMerger, ControlCommand
 
 try:
@@ -138,6 +137,10 @@ class RouteGeometry:
 
 _VEHICLE_TYPE_JSON = {"brand": "Analitik", "model": "Motor", "lengthMeters": 20, "code": "AM"}
 
+# Motorun "yavaşlattı" sayılması için hız çarpanı eşiği (yaklaşma kaybı ölçümü).
+# Bandın küçük dalgalanmaları (0.95-1.0) müdahale sayılmaz.
+SLOW_FACTOR_THRESHOLD = 0.95
+
 
 class SimManager:
     """Analitik motor simulasyonunu yonetir ve dashboard verisini uretir."""
@@ -149,16 +152,22 @@ class SimManager:
         start_hour: float = 7.0,
         seed: int = 42,
         time_scale: float = 5.0,
-        pid_kp: float = 0.15,
-        pid_ki: float = 0.005,
-        pid_kd: float = 0.08,
     ):
         self.config = DEFAULT_CONFIG
         self.config.vehicle_count = vehicle_count
         self.direction = direction
         self.start_hour = start_hour
         self.time_scale = time_scale
-        self.rng = np.random.default_rng(seed)
+        # Bağımsız RNG akışları: trafik ve dwell AYRI generator'lardan beslenir.
+        # Aksi halde motor kaynaklı dwell-örnekleme sayısı farkı tek paylaşılan
+        # generator'ın imlecini kaydırır ve A/B'de baseline ile treatment FARKLI
+        # trafik görür (confound). Ayrık akışlarla trafik dizisi yalnızca
+        # (seed, zaman)'in fonksiyonu olur → iki sim AYNI trafiği yaşar.
+        self._seed = seed
+        _ss = np.random.SeedSequence(seed)
+        self.rng_traffic, self.rng_dwell = (
+            np.random.default_rng(s) for s in _ss.spawn(2)
+        )
         self.dt = DT
 
         # Rota yukle
@@ -198,12 +207,9 @@ class SimManager:
             vehicle_length=VEHICLE_LENGTH,
         )
 
-        self.pid = PIDController(kp=pid_kp, ki=pid_ki, kd=pid_kd, dt=self.dt, u_max=60.0)
-
         # SmartStop tabanlı kontrol sistemi
         self.controller = ControlMerger(
             headway_model=self.headway_model,
-            pid=self.pid,
             min_gap=25.0,
             vehicle_length=VEHICLE_LENGTH,
             comfort_braking=self.config.comfort_braking,
@@ -213,6 +219,20 @@ class SimManager:
 
         # Motor (analitik kontrolcu) acik/kapali — dashboard'dan canli toggle
         self.engine_enabled = True
+
+        # === Yaklaşma kaybı ölçümü (durak ziyareti başına, kapı açılmaya kadar) ===
+        # A (kuyruk): kuyruğa giriş → kapı açılma. B (proaktif): ilk yavaşlatma →
+        # kapı açılma. İki strateji aynı otobüste aynı anda olmaz; her ziyaret bir
+        # senaryoya sınıflanır. Listeler ham örnekleri tutar (mean/p95 için).
+        self._approach_queue_losses: list[float] = []   # Senaryo A örnekleri (sn)
+        self._approach_slow_losses: list[float] = []     # Senaryo B örnekleri (sn)
+
+        # [SKIP-STOP] sayaçlar (talep-farkındalı durak atlama)
+        self._skip_total: int = 0
+        self._skip_by_stop: dict[int, int] = {}
+
+        # Araç-bazlı sefer kayıtları: (id, bitiş_zamanı, süre, kuyruk, dwell)
+        self.trip_log: list[tuple] = []
 
     def _calibrate_stops_to_platforms(self, direction: str):
         """Platform giris noktalarini kullanarak durak metre pozisyonlarini kalibre et."""
@@ -370,7 +390,7 @@ class SimManager:
         # 2. Trafik
         self.traffic_zones = update_traffic_zones(
             self.traffic_zones, dt, self.route_length,
-            self.config, is_rush, self.rng,
+            self.config, is_rush, self.rng_traffic,
         )
 
         # 3. Fizik + FSM
@@ -391,8 +411,12 @@ class SimManager:
                     new_rem = min(veh.dwell_remaining, cmd.dwell_cap)
                     veh.last_dwell_time -= (veh.dwell_remaining - new_rem)
                     veh.dwell_remaining = new_rem
-                if cmd.skip_stop:
+                if cmd.skip_stop and not veh.skip_next_stop:
                     veh.skip_next_stop = True
+                    # [SKIP-STOP] metrik: toplam + durak bazinda sayac
+                    self._skip_total += 1
+                    si = veh.next_stop_index
+                    self._skip_by_stop[si] = self._skip_by_stop.get(si, 0) + 1
 
             target_speed = compute_target_speed(
                 veh, self.config, self.stops,
@@ -405,13 +429,17 @@ class SimManager:
             leader = self._find_leader(veh, sorted_v)
             update_vehicle_physics(veh, dt, target_speed, leader, self.config, self.route_length)
 
+            prev_phase = veh.phase
             update_station_fsm(
                 veh, dt, self.stops, self.config,
                 is_rush_hour=is_rush,
                 all_vehicles=self.vehicles,
-                rng=self.rng,
+                rng=self.rng_dwell,
                 current_hour=current_hour,
             )
+
+            # === Yaklaşma kaybı ölçümü (A: kuyruk, B: proaktif yavaşlama) ===
+            self._track_approach_loss(veh, prev_phase, cmd)
 
             # === Uçtan uca süre takibi ===
             # Kuyrukta bekleme süresi biriktir
@@ -428,6 +456,13 @@ class SimManager:
                 if trip_duration > 0:
                     veh.trip_last_duration = trip_duration
                     veh.trip_completed_count += 1
+                    # Arac-bazli sefer kaydi (eslestirilmis A/B analizi icin):
+                    # (arac_id, tamamlanma_sim_zamani, sure, kuyruk, dwell)
+                    self.trip_log.append((
+                        veh.id, round(self.sim_time, 1), round(trip_duration, 1),
+                        round(veh.trip_total_queue_time, 1),
+                        round(veh.trip_total_dwell_time, 1),
+                    ))
 
                 veh.position_meters = self._seg_start_pos
                 veh.speed = self.config.max_speed * 0.5
@@ -443,9 +478,48 @@ class SimManager:
                 veh.trip_start_time = self.sim_time
                 veh.trip_total_queue_time = 0.0
                 veh.trip_total_dwell_time = 0.0
+                veh.visit_stop_idx = -1
+                veh.visit_queue_start = -1.0
+                veh.visit_slow_start = -1.0
 
         self.sim_time += dt
         self.step_count += 1
+
+    def _track_approach_loss(self, veh, prev_phase, cmd) -> None:
+        """Durak ziyareti başına 'müdahale → kapı açılma' kaybını ölç.
+
+        İki senaryo (asimetrik başlangıç, kullanıcı tanımı):
+          A (kuyruk):    kuyruğa giriş anından kapı açılmaya kadar
+                         (= queue_wait_time + peronda durma süresi).
+          B (proaktif):  motorun ilk hız düşürme anından kapı açılmaya kadar.
+        Aynı otobüs bir ziyarette ikisini birden yaşamaz; kuyruğa girdiyse A,
+        girmeden yavaşlatıldıysa B sayılır. Kapı açılma = 'stopped'a ilk geçiş.
+        """
+        # Yeni ziyaret? hedef durak değişince sayaçları sıfırla
+        if veh.next_stop_index != veh.visit_stop_idx:
+            veh.visit_stop_idx = veh.next_stop_index
+            veh.visit_queue_start = -1.0
+            veh.visit_slow_start = -1.0
+
+        # B başlangıcı: motor bu ziyarette ilk kez yavaşlattı (yaklaşma/seyirde)
+        if (veh.visit_slow_start < 0 and self.engine_enabled and cmd is not None
+                and cmd.speed_factor < SLOW_FACTOR_THRESHOLD
+                and veh.phase in ("cruising", "approaching")):
+            veh.visit_slow_start = self.sim_time
+
+        # A başlangıcı: kuyruğa ilk giriş
+        if veh.phase == "queued" and veh.visit_queue_start < 0:
+            veh.visit_queue_start = self.sim_time
+
+        # Kapı açılma anı: stopped'a ilk geçiş → sınıflandır ve biriktir
+        if prev_phase != "stopped" and veh.phase == "stopped":
+            if veh.visit_queue_start >= 0:
+                self._approach_queue_losses.append(self.sim_time - veh.visit_queue_start)
+            elif veh.visit_slow_start >= 0:
+                self._approach_slow_losses.append(self.sim_time - veh.visit_slow_start)
+            # serbest akış (ne kuyruk ne yavaşlatma) → kayıp ~0, kaydedilmez
+            veh.visit_queue_start = -1.0
+            veh.visit_slow_start = -1.0
 
     def _find_leader(self, vehicle, sorted_vehicles):
         best = None
@@ -487,6 +561,68 @@ class SimManager:
             "tripMinDuration": round(min(durations), 1),
             "tripMaxDuration": round(max(durations), 1),
         }
+
+    def set_hour(self, hour: float) -> None:
+        """Simülasyon saatini anlık değiştir (rejim testi).
+
+        current_hour = start_hour + sim_time/3600 olduğundan start_hour geri
+        hesaplanır; rush bayrağı ve DemandModel talep okumaları bir sonraki
+        tick'ten itibaren yeni saati görür.
+        """
+        self.start_hour = (float(hour) % 24.0) - self.sim_time / 3600.0
+
+    def reset_approach_metrics(self) -> None:
+        """Yaklaşma kaybı örneklerini sıfırla (A/B warm-up sonrası çağrılır)."""
+        self._approach_queue_losses.clear()
+        self._approach_slow_losses.clear()
+
+    @staticmethod
+    def _mean_p95(xs: list[float]) -> tuple[float, float]:
+        if not xs:
+            return 0.0, 0.0
+        m = sum(xs) / len(xs)
+        s = sorted(xs)
+        k = min(len(s) - 1, int(round(0.95 * (len(s) - 1))))
+        return m, s[k]
+
+    def _approach_loss_summary(self) -> dict:
+        """A (kuyruk) ve B (proaktif yavaşlama) yaklaşma kayıplarının özeti.
+
+        approachQueue* = Senaryo A: kuyruğa girip kapı açana kadar geçen süre.
+        approachSlow*  = Senaryo B: motor yavaşlatıp kapı açana kadar geçen süre.
+        Sayımlar hangi stratejinin ne sıklıkta gerçekleştiğini de gösterir.
+        """
+        q_mean, q_p95 = self._mean_p95(self._approach_queue_losses)
+        s_mean, s_p95 = self._mean_p95(self._approach_slow_losses)
+        return {
+            "approachQueueLossMean": round(q_mean, 1),
+            "approachQueueLossP95": round(q_p95, 1),
+            "approachQueueCount": len(self._approach_queue_losses),
+            "approachSlowLossMean": round(s_mean, 1),
+            "approachSlowLossP95": round(s_p95, 1),
+            "approachSlowCount": len(self._approach_slow_losses),
+        }
+
+    def compute_comparison_metrics(self) -> dict:
+        """A/B karşılaştırması için headline metrikler.
+
+        Hem motor-AÇIK hem motor-KAPALI sim'de AYNI tick'te çağrılmalı ki
+        baseline ile treatment aynı simülasyon zamanında kıyaslansın.
+        get_dashboard_state yalnızca AÇIK sim için çağrıldığından, KAPALI
+        sim'in headway/bunching metrikleri aksi halde hiç hesaplanmıyordu.
+        """
+        hs = self.headway_model.compute(self.vehicles, self.dt)
+        metrics = self.headway_model.compute_fleet_metrics(hs)
+        out = {
+            "headwayCV": round(metrics["cv"], 3),
+            "bunchingPairs": metrics["bunching_pairs"],
+            "meanHeadway": round(metrics["mean_headway"], 1),
+            "targetHeadway": round(self.headway_model.target_headway, 1),
+        }
+        out.update(self._compute_trip_metrics())
+        out.update(self._approach_loss_summary())
+        out["skipTotal"] = self._skip_total
+        return out
 
     def add_vehicle(self):
         """Hatta yeni arac ekle — aktif segment/rota icindeki en buyuk bosa eklenir."""
@@ -534,7 +670,6 @@ class SimManager:
             return  # min 3 arac
         removed = self.vehicles.pop()
         # Dead state temizle (bellek sızıntısı önleme)
-        self.pid.reset_vehicle(removed.id)
         self.headway_model._prev_headways.pop(removed.id, None)
         self.headway_model.update_target(num_vehicles=len(self.vehicles))
         print(f"[SIM] Arac cikarildi: #{removed.id}, kalan: {len(self.vehicles)}")
@@ -558,7 +693,6 @@ class SimManager:
             # Arac cikar — en sondakilerden
             while len(self.vehicles) > count and len(self.vehicles) > 3:
                 removed = self.vehicles.pop()
-                self.pid.reset_vehicle(removed.id)
                 self.headway_model._prev_headways.pop(removed.id, None)
             self.headway_model.update_target(num_vehicles=len(self.vehicles))
 
@@ -608,7 +742,7 @@ class SimManager:
             veh.trip_total_dwell_time = 0.0
 
         self.controller.reset()
-        self.pid.reset()
+        self.reset_approach_metrics()
         print(f"[SIM] Segment: {self.stops[start_idx].name} -> {self.stops[end_idx].name} ({end_idx - start_idx + 1} durak, {seg_length:.0f}m)")
 
     def reset_route_segment(self):
@@ -636,7 +770,7 @@ class SimManager:
             veh.trip_total_dwell_time = 0.0
 
         self.controller.reset()
-        self.pid.reset()
+        self.reset_approach_metrics()
         print(f"[SIM] Segment sifirlandi — tüm rota aktif ({len(self.stops)} durak)")
 
     def get_dashboard_state(self) -> dict:
@@ -718,6 +852,10 @@ class SimManager:
                     "idealArrival": round(cmd.ideal_arrival, 1) if cmd else 0.0,
                     "queueTimeSaved": round(cmd.queue_time_avoided, 1) if cmd else 0.0,
                     "netBenefit": round(cmd.net_benefit, 2) if cmd else 0.0,
+                    # Karar-anı counterfactual: A (kuyruk) vs B (proaktif yavaşla)
+                    "cascadeCost": round(cmd.cascade_cost, 1) if cmd else 0.0,
+                    "downstreamCost": round(cmd.downstream_cost, 1) if cmd else 0.0,
+                    "interventionCost": round(cmd.intervention_cost, 1) if cmd else 0.0,
                 },
                 "_trip": {
                     "elapsed": round(self.sim_time - veh.trip_start_time, 1),
@@ -805,6 +943,7 @@ class SimManager:
 
         return {
             "time": round(self.sim_time, 1),
+            "currentHour": round(current_hour % 24.0, 2),
             "vehicles": vehicles_json,
             "stops": stops_json,
             "allStops": [{"index": s.index, "name": s.name} for s in self.stops],
@@ -821,7 +960,6 @@ class SimManager:
                 "bunchingPairs": metrics["bunching_pairs"],
                 "meanHeadway": round(metrics["mean_headway"], 1),
                 "targetHeadway": round(self.headway_model.target_headway, 1),
-                "pidGains": self.pid.get_gains(),
                 "activeHolds": sum(1 for c in cmd_cache.values() if c.hold_time > 0),
                 "activeFilters": sum(1 for c in cmd_cache.values() if c.speed_factor < 0.95),
                 # Yeni: durak-slot metrikleri
@@ -830,6 +968,11 @@ class SimManager:
                 "smartStopStates": self.controller.get_stop_interface_states(),
                 # Uçtan uca sefer metrikleri
                 **self._compute_trip_metrics(),
+                # Yaklaşma kaybı: A (kuyruk) vs B (proaktif yavaşlama)
+                **self._approach_loss_summary(),
+                # [SKIP-STOP] talep-farkındalı atlama sayaçları
+                "skipTotal": self._skip_total,
+                "skipByStop": {str(k): v for k, v in self._skip_by_stop.items()},
             },
         }
 
@@ -909,6 +1052,13 @@ async def simulation_handler(websocket):
                             sim_off.reset_route_segment()
                     elif action == "set_engine_enabled":
                         sim.engine_enabled = bool(cmd.get("value", True))
+                    elif action == "set_hour":
+                        # [SKIP-STOP testi] Sim saatini anlik degistir — talep
+                        # rejimi (dusuk/yuksek) ve rush davranisi canli izlenir
+                        h = float(cmd.get("value", 8.0))
+                        sim.set_hour(h)
+                        if compare and sim_off:
+                            sim_off.set_hour(h)
                     elif action == "set_compare_mode":
                         compare = bool(cmd.get("value", False))
                         if compare:
@@ -948,6 +1098,10 @@ async def simulation_handler(websocket):
                         state["compare"] = True
                         state["compareOff"] = {
                             "time": round(sim_off.sim_time, 1),
+                            # Baseline (motor KAPALI) headline metrikleri — AÇIK
+                            # sim ile aynı tick'te hesaplanır, böylece dashboard
+                            # headway CV / bunching'i yan yana kıyaslayabilir.
+                            "analytics": sim_off.compute_comparison_metrics(),
                             "vehicles": [
                                 {
                                     "id": v.id,
