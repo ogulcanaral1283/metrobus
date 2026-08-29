@@ -88,8 +88,10 @@ const DEFAULT_ZOOM = 11;
 // Harita modları
 const MAP_TILES = {
     dark: {
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> | &copy; <a href="https://carto.com/">CARTO</a>',
+        // Carto dark_all anonim erişimi kapatıp API key zorunlu yaptı;
+        // Stadia Alidade Smooth Dark localhost'tan key'siz çalışıyor.
+        url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> | &copy; <a href="https://stadiamaps.com/">Stadia Maps</a>',
         label: '🌙 Dark',
     },
     satellite: {
@@ -135,20 +137,31 @@ function phaseColor(vehicle: SimVehicle): string {
 // Harita içi araç ikonları
 // ==========================================
 
-function vehicleIcon(vehicle: SimVehicle) {
+/**
+ * Aracın görünür durumunu (pulse/border belirleyen) tek yerde hesaplar.
+ * vehicleIcon ile vehicleIconKey AYNI mantığı kullanmalı; aksi halde durum
+ * değişse de ikon yeniden çizilmez (ör. perona giren kuyruk aracı sarı kalır).
+ */
+function vehicleStatus(vehicle: SimVehicle) {
     const v = vehicle as any;
-    const c = phaseColor(vehicle);
     const isBunched = v.isBunched || false;
-    const predictive = v.predictiveDecision;
-
     const isQueued = vehicle.phase === 'queued'
         || (vehicle.phase === 'approaching' && vehicle.speed * 3.6 < 5 && !v._analytic?.isInsidePlatform);
     const isBlocked = vehicle.phase === 'blocked';
     const speedFactor = v._analytic?.speedFactor ?? 1.0;
+    const isSpeedAdjusted = speedFactor < 0.95 && !isQueued && !isBlocked && !isBunched;
+    return { isBunched, isQueued, isBlocked, isSpeedAdjusted, speedFactor };
+}
+
+function vehicleIcon(vehicle: SimVehicle) {
+    const v = vehicle as any;
+    const c = phaseColor(vehicle);
+    const predictive = v.predictiveDecision;
+
+    const { isBunched, isQueued, isBlocked, isSpeedAdjusted, speedFactor } = vehicleStatus(vehicle);
     const bandLow = v._analytic?.bandLowKmh ?? 0;
     const bandHigh = v._analytic?.bandHighKmh ?? 0;
     const hasBand = bandLow > 0 && bandHigh > 0;
-    const isSpeedAdjusted = speedFactor < 0.95 && !isQueued && !isBlocked && !isBunched;
 
     // Pulse class önceliği: queued/blocked > bunching > speedAdjust
     // Queued ve blocked DAIMA kendi animasyonlarını gösterir — bunching override edemez
@@ -353,10 +366,12 @@ function getPhaseDetail(vehicle: SimVehicle): string {
 // ==========================================
 // İkon durumunu belirleyen anahtar — sadece bu değişince ikon yeniden oluşturulur
 function vehicleIconKey(vehicle: SimVehicle): string {
-    const v = vehicle as any;
-    const bunched = v.isBunched ? 1 : 0;
-    const sf = Math.round((v._analytic?.speedFactor ?? 1.0) * 20);
-    return `${vehicle.phase}_${bunched}_${sf}_${vehicle.direction}`;
+    const s = vehicleStatus(vehicle);
+    const sf = Math.round(s.speedFactor * 20);
+    // Görünür durum kodu — pulse/border bunlara göre değişir, anahtara dahil
+    // edilmezse durum değişiminde setIcon tetiklenmez (bayat sarı kuyruk ikonu).
+    const st = s.isQueued ? 'q' : s.isBlocked ? 'x' : s.isBunched ? 'b' : s.isSpeedAdjusted ? 's' : 'n';
+    return `${vehicle.phase}_${st}_${sf}_${vehicle.direction}`;
 }
 
 // Başlangıç ikonu — tek bir basit placeholder, gerçek ikon useEffect'te atanır
@@ -408,12 +423,12 @@ const VehicleMarker: React.FC<{ vehicle: SimVehicle }> = React.memo(({ vehicle }
         />
     );
 }, (prev, next) => {
-    // Sadece pozisyon veya durum değişince re-render
+    // Sadece pozisyon veya görünür durum değişince re-render. Durum kıyası
+    // vehicleIconKey üzerinden yapılır — ikonla aynı mantık, böylece araç
+    // dururken durum değişse de (kuyruk→docking) ikon güncellenir.
     return prev.vehicle.latitude === next.vehicle.latitude
         && prev.vehicle.longitude === next.vehicle.longitude
-        && prev.vehicle.phase === next.vehicle.phase
-        && (prev.vehicle as any).isBunched === (next.vehicle as any).isBunched
-        && (prev.vehicle as any)._analytic?.speedFactor === (next.vehicle as any)._analytic?.speedFactor;
+        && vehicleIconKey(prev.vehicle) === vehicleIconKey(next.vehicle);
 });
 
 // ==========================================
@@ -839,6 +854,44 @@ const App: React.FC = () => {
                             );
                         })()}
 
+                        {/* === Saat secici (talep rejimi testi: skip-stop / rush) === */}
+                        {(() => {
+                            const curH = trainingData.currentHour ?? 0;
+                            const isRush = trainingData.isRushHour ?? false;
+                            return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', padding: '6px 8px', background: 'rgba(0,188,212,0.08)', borderRadius: '6px', border: '1px solid rgba(0,188,212,0.3)' }}>
+                                    <span style={{ fontSize: '11px', color: '#aaa' }}>Sim Saati:</span>
+                                    <b style={{ fontSize: '13px', color: '#00BCD4', minWidth: '44px' }}>
+                                        {String(Math.floor(curH)).padStart(2, '0')}:{String(Math.floor((curH % 1) * 60)).padStart(2, '0')}
+                                    </b>
+                                    <select
+                                        value=""
+                                        onChange={(e) => {
+                                            if (e.target.value !== '') {
+                                                wsRef.current?.send(JSON.stringify({ action: 'set_hour', value: parseInt(e.target.value) }));
+                                            }
+                                        }}
+                                        style={{
+                                            padding: '3px 6px', border: '1px solid rgba(0,188,212,0.3)', borderRadius: '6px',
+                                            background: '#1a2332', color: '#fff', fontSize: '11px', outline: 'none',
+                                        }}
+                                    >
+                                        <option value="">saat seç…</option>
+                                        {Array.from({ length: 24 }).map((_, h) => (
+                                            <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                                        ))}
+                                    </select>
+                                    <span style={{
+                                        fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '10px',
+                                        background: isRush ? 'rgba(244,67,54,0.2)' : 'rgba(76,175,80,0.15)',
+                                        color: isRush ? '#FF7043' : '#81C784',
+                                    }}>
+                                        {isRush ? 'RUSH' : 'normal'}
+                                    </span>
+                                </div>
+                            );
+                        })()}
+
                         {/* === A/B Karsilastir Toggle (paralel cift sim) === */}
                         {(() => {
                             const cmp = trainingData.compare ?? false;
@@ -876,25 +929,13 @@ const App: React.FC = () => {
                             <div title="Kontrolcunun hedefledigi ideal zaman araligi. Hat uzunlugu / (arac sayisi x seyir hizi) formulu ile hesaplanir. Arac eklenince duser.">
                                 Hedef: <b style={{ color: '#00BCD4' }}>{trainingData.analytics.targetHeadway?.toFixed(0)}s</b>
                             </div>
-                            <div title="Aktif Hold = su anda durakta ek sure bekletilen arac sayisi. PID kontrolcu onetki araca cok yakin olan araci durakta tutar.">
+                            <div title="Aktif Hold = su anda durakta ek sure bekletilen arac sayisi. SmartStop, slot tasmasini onlemek icin onundeki araca cok yakin olan araci durakta tutar.">
                                 Hold: <b style={{ color: '#fff' }}>{trainingData.analytics.activeHolds}</b>
                             </div>
                             <div title="Hiz Filtresi = hizi dusurulerek yavaslatilan arac sayisi. Kontrolcu araclarin birbirine yaklasmasini engellemek icin kullanir.">
                                 Filtre: <b style={{ color: '#fff' }}>{trainingData.analytics.activeFilters}</b>
                             </div>
                         </div>
-
-                        {/* === PID Kazanclari === */}
-                        {trainingData.analytics.pidGains && (
-                            <div style={{ marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '4px' }}>
-                                <div style={{ fontSize: '10px', color: '#888', marginBottom: '2px' }} title="PID = Proportional-Integral-Derivative kontrolcu. Kp = anlik hataya tepki, Ki = birikimis hatanin duzeltilmesi, Kd = hata degisim hizina tepki.">PID Kazanclari:</div>
-                                <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: '#aaa' }}>
-                                    <span title="Proportional (Oransal): headway hatasina anlik tepki gucunu belirler. Buyuk Kp = agresif duzeltme.">Kp=<b style={{ color: '#fff' }}>{trainingData.analytics.pidGains.kp?.toFixed(3)}</b></span>
-                                    <span title="Integral (Toplam): uzun sureli birikimis hatayi duzeltir. Buyuk Ki = yavasa yakinsama ama karisiz durum.">Ki=<b style={{ color: '#fff' }}>{trainingData.analytics.pidGains.ki?.toFixed(3)}</b></span>
-                                    <span title="Derivative (Turev): headway degisim hizina gore onceden mudahale eder. Buyuk Kd = salinimlari bastirip kararlilik saglar.">Kd=<b style={{ color: '#fff' }}>{trainingData.analytics.pidGains.kd?.toFixed(3)}</b></span>
-                                </div>
-                            </div>
-                        )}
 
                         {/* === Parametre Rehberi === */}
                         <details style={{ marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '4px' }}>
@@ -903,9 +944,8 @@ const App: React.FC = () => {
                                 <b style={{ color: '#4CAF50' }}>Headway CV</b> — Araclar arasi zaman duzensizligi. 0 = esit dagilim, {'<'}0.3 iyi.<br/>
                                 <b style={{ color: '#FF9800' }}>Bunching</b> — 60sn'den yakin arac cifti. Fazlaysa filo kumelenmis.<br/>
                                 <b style={{ color: '#00BCD4' }}>Hedef Headway</b> — Hat / (N x hiz). Arac eklendikce duser.<br/>
-                                <b style={{ color: '#fff' }}>Hold</b> — Durakta ek tutma yapilan arac (PID karari).<br/>
+                                <b style={{ color: '#fff' }}>Hold</b> — Durakta ek tutma yapilan arac (SmartStop karari).<br/>
                                 <b style={{ color: '#fff' }}>Filtre</b> — Hizi dusurulerek yavaslatan arac sayisi.<br/>
-                                <b style={{ color: '#fff' }}>Kp/Ki/Kd</b> — PID kazanclari: Oransal / Integral / Turev.<br/>
                             </div>
                         </details>
                     </div>
@@ -1384,6 +1424,7 @@ const App: React.FC = () => {
                         <Marker
                             key={`${s.code}-${qFlag}`}
                             position={[s.latitude, s.longitude]}
+                            eventHandlers={{ click: () => setSelectedStopIdx(i) }}
                             icon={stationIcon(s.name, s.sequenceOrder, i % 5 === 0, (() => {
                                 const ws = trainingData?.stops?.[i];
                                 if (!ws) return undefined;
@@ -1807,6 +1848,158 @@ const App: React.FC = () => {
                     </div>
                 )}
             </main>
+
+            {/* ===== DURAK KUYRUK PANELİ — sağ altta, seçili durağın canlı kuyruğu ===== */}
+            {selectedStopIdx !== null && (() => {
+                const si = selectedStopIdx;
+                const ws = trainingData?.stops?.[si];
+                const stopName = STATION_LIST[si]?.name ?? `Durak ${si + 1}`;
+                const capacity = ws?.slotCount ?? 1;
+                const stopMeter = ws?.meterPosition ?? null;
+
+                const rel = vehicles.filter(v => (v as any).nextStopIndex === si);
+                // Platformdakiler — en öndeki ilk sırada
+                const platform = rel
+                    .filter(v => ['stopped', 'doorsClosed', 'docking', 'blocked'].includes(v.phase))
+                    .sort((a, b) => b.positionMeters - a.positionMeters);
+                const queuedV = rel
+                    .filter(v => v.phase === 'queued')
+                    .sort((a, b) => a.positionMeters - b.positionMeters);
+                const etaOf = (v: any) => {
+                    const e = v._analytic?.etaToStop ?? 0;
+                    if (e > 0) return e;
+                    if (stopMeter == null) return 0;
+                    return Math.max(0, (stopMeter - v.positionMeters) / Math.max(v.speed, 3));
+                };
+                // Yaklaşanlar — en uzak solda, en yakın peron tarafında (sağda)
+                const incoming = rel
+                    .filter(v => v.phase === 'approaching' || v.phase === 'cruising')
+                    .map(v => ({ v, eta: etaOf(v) }))
+                    .sort((a, b) => b.eta - a.eta);
+                const shownIncoming = incoming.slice(-6);
+                const hiddenCount = incoming.length - shownIncoming.length;
+
+                const CARD_W = '64px';
+                const busCard = (v: any, main: string, sub: string, color: string, keyPfx: string) => (
+                    <div key={`${keyPfx}-${v.direction}-${v.id}`} style={{
+                        width: CARD_W, flexShrink: 0, borderRadius: '9px', padding: '5px 3px',
+                        background: `${color}1e`, border: `1px solid ${color}66`, textAlign: 'center',
+                    }}>
+                        <div style={{ fontSize: '14px', lineHeight: 1 }}>🚌</div>
+                        <div style={{ fontSize: '9px', fontWeight: 700, color: '#e2e8f0', marginTop: '2px' }}>AM-{String(v.id).padStart(2, '0')}</div>
+                        <div style={{ fontSize: '11px', fontWeight: 800, color, marginTop: '1px' }}>{main}</div>
+                        <div style={{ fontSize: '8px', color: '#94a3b8' }}>{sub}</div>
+                    </div>
+                );
+                const platformCard = (v: any, keyPfx: string) => {
+                    if (v.phase === 'stopped') return busCard(v, `${Math.max(0, Math.round(v.dwellRemaining))}s`, 'operasyon kalan', '#4CAF50', keyPfx);
+                    if (v.phase === 'doorsClosed') return busCard(v, 'kalkış', 'kapı kapandı', '#FF5722', keyPfx);
+                    if (v.phase === 'docking') return busCard(v, 'yanaşıyor', 'kenetleniyor', '#00BCD4', keyPfx);
+                    return busCard(v, 'blokeli', 'çıkış bekliyor', '#FF3D00', keyPfx);
+                };
+
+                // Peron slot kutuları: sol=arka, sağ=ön. Araç GERÇEK pozisyonuna göre
+                // yerleştirilir (önden slot index = peron önüne mesafe / 20.5m) —
+                // arkada duran araç arkada, öndeki boşluk önde görünür.
+                const SLOT_M = 20.5;
+                const slotAssign: (any | null)[] = Array.from({ length: capacity }, () => null);
+                if (stopMeter != null) {
+                    for (const v of platform) {   // önce en öndeki
+                        let sIdx = Math.floor(Math.max(0, stopMeter - v.positionMeters) / SLOT_M + 1e-6);
+                        sIdx = Math.min(capacity - 1, Math.max(0, sIdx));
+                        while (sIdx < capacity && slotAssign[sIdx]) sIdx++;  // çakışmada arkaya kay
+                        if (sIdx < capacity) slotAssign[sIdx] = v;
+                    }
+                } else {
+                    platform.slice(0, capacity).forEach((v, i) => { slotAssign[i] = v; });
+                }
+                const slotBoxes = Array.from({ length: capacity }).map((_, k) => {
+                    const sIdx = capacity - 1 - k;   // sağdaki kutu = önden 0. slot
+                    const v = slotAssign[sIdx];
+                    if (v) return platformCard(v, `p${k}`);
+                    return (
+                        <div key={`empty-${k}`} style={{
+                            width: CARD_W, flexShrink: 0, borderRadius: '9px', minHeight: '56px',
+                            border: '1px dashed rgba(255,255,255,0.18)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '9px', color: '#475569',
+                        }}>boş slot</div>
+                    );
+                });
+
+                return (
+                    <div style={{
+                        position: 'fixed', bottom: '12px',
+                        right: stopPanelOpen ? '372px' : '12px',
+                        zIndex: 1900, maxWidth: 'min(640px, calc(100vw - 400px))',
+                        background: 'rgba(13,17,28,0.96)', backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(0,229,255,0.25)', borderRadius: '14px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                        padding: '10px 12px', transition: 'right 0.28s cubic-bezier(0.4,0,0.2,1)',
+                    }}>
+                        {/* Başlık */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 800, color: '#00E5FF' }}>🚏 {stopName}</span>
+                            <span style={{ fontSize: '10px', color: '#64748b' }}>
+                                {platform.length}/{capacity} slot · {queuedV.length} kuyruk · {incoming.length} yaklaşan
+                            </span>
+                            <div style={{ flex: 1 }} />
+                            <button onClick={() => setSelectedStopIdx(null)} style={{
+                                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                color: '#64748b', borderRadius: '6px', width: '22px', height: '22px',
+                                fontSize: '12px', cursor: 'pointer', lineHeight: 1,
+                            }}>✕</button>
+                        </div>
+
+                        {/* Kuyruk şeridi: [yaklaşanlar] → [kuyruk] → [PERON] */}
+                        {rel.length === 0 ? (
+                            <div style={{ fontSize: '11px', color: '#475569', padding: '10px 4px' }}>
+                                Bu durağa şu an yaklaşan veya durakta olan araç yok.
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', alignItems: 'stretch', gap: '5px', overflowX: 'auto', paddingBottom: '4px' }}>
+                                {hiddenCount > 0 && (
+                                    <div style={{
+                                        flexShrink: 0, display: 'flex', alignItems: 'center',
+                                        fontSize: '10px', color: '#64748b', padding: '0 4px',
+                                    }}>+{hiddenCount} araç…</div>
+                                )}
+                                {shownIncoming.map(({ v, eta }) => busCard(
+                                    v, `ETA ${Math.round(eta)}s`,
+                                    v.phase === 'approaching' ? 'yaklaşıyor' : `${Math.round(v.speed * 3.6)} km/h`,
+                                    v.phase === 'approaching' ? '#FFD600' : '#60a5fa', 'in',
+                                ))}
+                                {queuedV.length > 0 && (
+                                    <div style={{ flexShrink: 0, width: '1px', background: 'rgba(233,30,99,0.4)', margin: '4px 2px' }} />
+                                )}
+                                {queuedV.map(v => busCard(v, `${Math.round((v as any).queueWaitTime)}s`, 'kuyrukta bekliyor', '#E91E63', 'q'))}
+                                {/* Peron bölümü */}
+                                <div style={{
+                                    flexShrink: 0, display: 'flex', gap: '5px', padding: '4px',
+                                    borderRadius: '10px', border: '1px solid rgba(118,255,3,0.3)',
+                                    background: 'rgba(118,255,3,0.05)', position: 'relative',
+                                }}>
+                                    {slotBoxes}
+                                    <div style={{
+                                        position: 'absolute', top: '-7px', right: '6px',
+                                        fontSize: '8px', fontWeight: 700, color: '#76FF03',
+                                        background: 'rgba(13,17,28,0.95)', padding: '0 4px', letterSpacing: '0.5px',
+                                    }}>PERON ▸</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Mini lejant */}
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '6px', fontSize: '8px', color: '#475569' }}>
+                            <span><span style={{ color: '#60a5fa' }}>●</span> seyirde (ETA)</span>
+                            <span><span style={{ color: '#FFD600' }}>●</span> yaklaşıyor (ETA)</span>
+                            <span><span style={{ color: '#E91E63' }}>●</span> kuyrukta (bekleme)</span>
+                            <span><span style={{ color: '#4CAF50' }}>●</span> operasyonda (kalan süre)</span>
+                            <span style={{ marginLeft: 'auto' }}>→ araçlar sağa, perona doğru akar</span>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* ===== DURAK DRAWER — haritanın sağından kayar ===== */}
             {(() => {
