@@ -50,6 +50,12 @@ VEHICLE_GAP_METERS = 0.5
 # Güvenli kalkış mesafesi (metre)
 SAFE_GAP = 0.5
 
+# [DEFRAG] Kapı açmadan önce doğru giriş pozisyonuna (öndeki aracın arkası /
+# peron önü) bu toleranstan daha uzaksa araç durduğu yerde OPERASYON BAŞLATMAZ;
+# 'docking' fazıyla öne çeker. Aksi hâlde peron ortasında kapı açan araç ön
+# slotları erişilmez kılıyor (fragmantasyon) → peron kısmen boşken kuyruk.
+DOCK_SNAP_TOLERANCE = 3.0
+
 
 # Varsayılan platform uzunluğu (metre) — veri eksik duraklarda kullanılır
 DEFAULT_PLATFORM_LENGTH = 60.0
@@ -108,15 +114,26 @@ def compute_rear_free_slots(
         # Peron tamamen boş → tüm slotlar erişilebilir
         return max(stop.slot_count, 1)
 
-    # En arkadaki araç (platform_vehicles position desc sıralı, [-1] en arkadaki)
-    rearmost = platform_vehicles[-1]
-    rearmost_rear = rearmost.position_meters - VEHICLE_LENGTH
+    # [CONVOY] Arka alanı yalnızca peronun İÇİNDEKİ araçlar fiziksel olarak
+    # sınırlar. Henüz peron kuyruğuna ULAŞMAMIŞ docking araçları (arkadan
+    # yaklaşanlar) alanı BLOKLAMAZ — ama birer slot REZERVE eder. Eski kod
+    # dışarıdaki docking aracı 'en arkadaki' sayıp alanı negatife düşürüyordu:
+    # içeri giren tek araç tüm girişleri serileştiriyor, takipçiler bol boş
+    # slot varken 'queued' etiketiyle sürünüyordu.
+    inside = [v for v in platform_vehicles
+              if v.position_meters - VEHICLE_LENGTH >= platform_tail - 2.0]
+    reserving = len(platform_vehicles) - len(inside)
 
-    # En arkadaki aracın arkasında kalan platform uzunluğu
-    rear_space = rearmost_rear - platform_tail - SAFE_GAP
     slot_size = VEHICLE_LENGTH + VEHICLE_GAP_METERS  # 20.5m
+    if not inside:
+        base = max(stop.slot_count, 1)
+    else:
+        # En arkadaki İÇERİDEKİ araç (desc sıralı, [-1] en arkadaki)
+        rearmost_rear = inside[-1].position_meters - VEHICLE_LENGTH
+        rear_space = rearmost_rear - platform_tail - SAFE_GAP
+        base = max(0, int(rear_space / slot_size))
 
-    return max(0, int(rear_space / slot_size))
+    return max(0, base - reserving)
 
 
 def compute_max_buses_at_stop(stop: LinearStop) -> int:
@@ -211,6 +228,30 @@ def is_blocked_by_gap(
                 return True
 
     return False
+
+
+def physical_position_limit(
+    vehicle: SimVehicle,
+    all_vehicles: list[SimVehicle],
+) -> float:
+    """[CLAMP] Aracın ilerleyebileceği mutlak fiziksel sınır.
+
+    Fazdan ve hedef duraktan BAĞIMSIZ: öndeki en yakın aracın arkası − SAFE_GAP.
+    queued/docking hareketleri hedeflerini yalnızca aynı-durak liderine göre
+    kurar; araya farklı hedefli bir araç (ör. yavaş seyreden) girdiğinde bu
+    kelepçe olmadan içinden geçebiliyorlardı.
+    """
+    limit = float("inf")
+    for v in all_vehicles:
+        if v.id == vehicle.id:
+            continue
+        if v.position_meters <= vehicle.position_meters:
+            continue
+        rear = v.position_meters - VEHICLE_LENGTH - SAFE_GAP
+        if rear < limit:
+            limit = rear
+    # Zaten ihlal varsa (spawn artefaktı vb.) aracı geriye ışınlama
+    return max(limit, vehicle.position_meters)
 
 
 def find_nearest_leader_on_platform(
@@ -327,6 +368,17 @@ def update_station_fsm(
                 return
 
             entry_pos = compute_entry_position(next_stop, platform_vehicles)
+
+            # [DEFRAG] Giriş pozisyonuna uzaksak kapı AÇMA — docking ile öne çek.
+            # Şoför davranışı: boş peronun arkasında durup kapı açılmaz, öne
+            # çekilir. docking dinamik hedefle lideri takip eder ve sıkı paketler.
+            if entry_pos - vehicle.position_meters > DOCK_SNAP_TOLERANCE:
+                vehicle.phase = "docking"
+                vehicle.is_queuing = False
+                vehicle.queue_wait_time = 0.0
+                vehicle.slot_meter_position = entry_pos
+                return
+
             # Mevcut pozisyon ile hesaplanan slot arasında makul olanı seç
             # Araç zaten peron içindeyse, geriye gitmesine gerek yok
             slot_pos = max(entry_pos, vehicle.position_meters) if platform_vehicles else vehicle.position_meters
@@ -367,26 +419,16 @@ def update_station_fsm(
                         vehicle.speed = 0.0
                         vehicle.acceleration = 0.0
                         return
-                    # Öndeki araca çok yakın → BURADA DUR
-                    # Slot pozisyonunu öndeki aracın arkasına göre hesapla
-                    safe_pos = leader_rear - SAFE_GAP
-                    vehicle.phase = "stopped"
-                    vehicle.speed = 0.0
-                    vehicle.acceleration = 0.0
-                    vehicle.slot_meter_position = safe_pos
-                    vehicle.position_meters = safe_pos
+                    # [DEFRAG] Hemen kapı AÇMA — docking'e geç. Docking dinamik
+                    # hedefle lideri takip eder; lider durağansa bir tick içinde
+                    # zaten 'stopped'a döner (blocked_stationary yolu), lider hâlâ
+                    # ilerliyorsa (docking) peşinden gidip sıkı paketlenir. Eski
+                    # davranış ilerleyen liderin arkasında kapı açıp aradaki
+                    # boşluğu kalıcılaştırıyordu (fragmantasyon).
+                    vehicle.phase = "docking"
                     vehicle.is_queuing = False
-                    vehicle.total_stops += 1
-
-                    dwell = _compute_realistic_dwell(
-                        next_stop, config, is_rush_hour, rng,
-                        use_fixed_dwell, fixed_dwell_seconds,
-                        current_hour,
-                    )
-                    dwell += vehicle.holding_extra
-                    vehicle.holding_extra = 0.0
-                    vehicle.dwell_remaining = dwell
-                    vehicle.last_dwell_time = dwell
+                    vehicle.queue_wait_time = 0.0
+                    vehicle.slot_meter_position = leader_rear - SAFE_GAP
                     return
             # Frenlemeye devam
             return
@@ -514,6 +556,11 @@ def update_station_fsm(
             # Lider yok ama slot da yok → olduğun yerde bekle (ilerleme yok).
             target = vehicle.position_meters
 
+        # [CLAMP] Hedef, öndeki EN YAKIN aracın (fazı/durağı ne olursa olsun)
+        # arkasını asla geçemez — aynı-durak liderine kilitli hedef, araya
+        # giren yabancı araçların içinden geçirmesin.
+        target = min(target, physical_position_limit(vehicle, vehicle_list))
+
         # ÇARPIŞMA KESİN ÖNLEME: pozisyon hedefi (lider arkası - SAFE_GAP) ASLA geçemez.
         if vehicle.position_meters >= target:
             vehicle.position_meters = min(vehicle.position_meters, target)
@@ -635,9 +682,19 @@ def update_station_fsm(
                     dock_accel = 0.0
 
             ds = v_old * dt + 0.5 * dock_accel * dt * dt
-            vehicle.position_meters += max(0.0, ds)
-            vehicle.speed = max(0.0, min(PLATFORM_MAX_SPEED, v_old + dock_accel * dt))
-            vehicle.acceleration = dock_accel
+            new_pos = vehicle.position_meters + max(0.0, ds)
+            # [CLAMP] Öndeki en yakın aracın arkası (fazdan bağımsız) aşılamaz.
+            # blocked_move yalnızca aynı-durak/departing araçları görüyor; kalkıp
+            # 'cruising'e dönen ama hâlâ hemen önde olan araç aksi hâlde deliniyordu.
+            limit = physical_position_limit(vehicle, vehicle_list)
+            if new_pos >= limit:
+                new_pos = limit
+                vehicle.speed = 0.0
+                vehicle.acceleration = 0.0
+            else:
+                vehicle.speed = max(0.0, min(PLATFORM_MAX_SPEED, v_old + dock_accel * dt))
+                vehicle.acceleration = dock_accel
+            vehicle.position_meters = new_pos
 
     # ============================================
     # STOPPED — Kapılar açık, yolcu operasyonu (PARALEL)

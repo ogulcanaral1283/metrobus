@@ -65,8 +65,8 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════
 
 # Toplam gecikme bütçesi (sn):
-#   hesaplama ~1s + iletişim ~0.5s + şoför algılama+karar ~4s + araç tepkisi ~2s
-TOTAL_DELAY_BUDGET: float = 7.5
+#   hesaplama+iletişim ~0.5s + şoför algılama+karar ~1.5s + araç tepkisi ~1.0s
+TOTAL_DELAY_BUDGET: float = 3.0
 
 # Gecikme bütçesinden sonra kalması gereken minimum etkin mesafe (m)
 MIN_EFFECTIVE_DISTANCE: float = 30.0
@@ -98,6 +98,21 @@ _SLOT_SIZE: float = 20.5   # VEHICLE_LENGTH(20) + VEHICLE_GAP_METERS(0.5)
 _BUS_LENGTH: float = 20.0
 _SAFE_GAP: float = 0.5
 
+# ── [SKIP-STOP] Talep-farkındalı durak atlama sabitleri ─────────────
+# Politika: skip YALNIZCA (a) durakta kuyruk öngörülüyorsa VE (b) durak o
+# saatte koridorun DÜŞÜK talepli dilimindeyse (İBB turnike verisi) yapılır.
+# Yüksek talepli durak (ör. Mecidiyeköy 18:00) talep kapısından asla geçemez.
+
+# Atlamayı tetiklemek için gereken min öngörülen kuyruk (sn)
+SKIP_MIN_QUEUE: float = 8.0
+
+# Atlanan durağın yolcuları için: arkadan gelen aracın en geç bu kadar sonra
+# varması gerekir (sn) — kimse uzun süre araçsız bırakılmaz
+SKIP_FOLLOWER_MAX_GAP: float = 180.0
+
+# Aynı durak art arda atlanamaz (sn) — ardışık araçlar aynı durağı boş geçmesin
+SKIP_STATION_COOLDOWN: float = 120.0
+
 # Faz filtreleri
 _ZONE_PHASES = {"cruising", "approaching"}
 _PLATFORM_PHASES = {"stopped", "doorsClosed", "blocked", "docking"}
@@ -121,6 +136,20 @@ class SpeedRecommendation:
     queue_time_avoided: float   # müdahaleyle önlenen bekleme süresi (sn)
     net_benefit: float          # pozitif → yavaşlamak kârlı
     stop_index: int = 0         # hedef durağın index'i
+
+    # === Karar-anı counterfactual maliyet kırılımı (A=kuyruk vs B=yavaşla) ===
+    # Senaryo A (kuyruğu kabul et): bu araç queue_time bekler VE arkasındaki
+    # araçlara cascade + downstream baskı bindirir.
+    # Senaryo B (proaktif yavaşla): bu araç ~queue_time kadar yolda yavaşlar ama
+    # kuyruk oluşmadığı için cascade/downstream maliyeti DOĞMAZ.
+    cascade_cost: float = 0.0      # A'nın arkadaki araçlara yüklediği maliyet (sn)
+    downstream_cost: float = 0.0   # A'nın aşağı duraklara yüklediği baskı maliyeti (sn)
+    intervention_cost: float = 0.0 # B'nin bu araca maliyeti ≈ queue_time (sn)
+
+    # [SKIP-STOP] Talep-farkındalı atlama kararı
+    skip: bool = False             # True → araç bu durağı atlamalı
+    projected_queue: float = 0.0   # dock projeksiyonundan öngörülen kuyruk (sn)
+    demand_rate: float = 0.0       # durağın o saatteki talebi (yolcu/saat)
 
 
 @dataclass
@@ -158,6 +187,8 @@ class SmartStop:
         approach_distance: float = 150.0,
         comfort_braking: float = 3.5,
         max_speed: float = 25.0,
+        demand=None,
+        skip_allowed: bool = True,
     ) -> None:
         self.stop = stop
         self.zone_start = zone_start            # önceki durağın pozisyonu (m)
@@ -166,6 +197,12 @@ class SmartStop:
         self.approach_distance = approach_distance
         self.comfort_braking = comfort_braking
         self.max_speed = max_speed
+
+        # [SKIP-STOP] talep modeli (rl_env.demand.DemandModel) + durak koruması
+        # (terminaller atlanamaz). _last_skip_time art arda atlamayı engeller.
+        self.demand = demand
+        self.skip_allowed = skip_allowed
+        self._last_skip_time: float = float("-inf")
 
     # ──────────────────────────────────────────────────────────────
     # Ana Güncelleme Döngüsü
@@ -176,6 +213,7 @@ class SmartStop:
         vehicles: List[SimVehicle],
         is_rush_hour: bool,
         sim_time: float,
+        current_hour: float = 8.0,
     ) -> Tuple[List[SpeedRecommendation], List["DwellRecommendation"]]:
         """
         Bölgeyi güncelle, hız ve dwell önerileri üret, durumu yayınla.
@@ -218,17 +256,28 @@ class SmartStop:
             rec = self._compute_recommendation(
                 bus, slot_timeline, following, downstream_press, is_rush_hour,
             )
+
+            # [SKIP-STOP] Kuyruk öngörülüyor + durak düşük talepli → atla.
+            # Atlayan araç yavaşlatılmaz ve slot REZERVE ETMEZ (durmayacak);
+            # boşalan slot arkadaki araçların timeline'ına kalır.
+            if self._should_skip(bus, rec, following, sim_time, current_hour):
+                rec.skip = True
+                rec.speed_factor = 1.0
+                rec.source = "smart_stop"
+                rec.reason = "skip"
+                self._last_skip_time = sim_time
+                recommendations.append(rec)
+                continue
+
             recommendations.append(rec)
 
             # [FIX-6] Her araç için slotu GERCEK ETA ile rezerve et.
             # "on_time" ve "too_close" dahil TUM zone araçları slotlarını rezerve
             # etmeli; aksi hâlde takip eden araç aynı slotu boş görür → zincir kırılır.
-            actual_eta = compute_eta(
-                self.zone_end - bus.position_meters,
-                bus.speed,
-                self.approach_distance,
-                self.comfort_braking,
-            )
+            # [QUEUE-POS] ETA sabit peron önüne değil aracın KUYRUK POZİSYONUNA
+            # ölçülür: öndeki dolu/rezerve slotların arkasına kenetlenir.
+            releases = [ft for (_sid, ft, _vid) in slot_timeline if ft > 1e-9]
+            _, actual_eta, _ = self._queue_position(bus, releases)
             _update_slot_timeline(
                 slot_timeline, actual_eta, bus.id, self.stop, is_rush_hour,
             )  # arrival_eta = actual_eta (gerçek ETA, yavaşlatılmış değil)
@@ -363,11 +412,19 @@ class SmartStop:
             platform_len = (self.stop.platform_length_meters
                             if self.stop.platform_length_meters > 0 else 60.0)
             platform_tail  = self.zone_end - platform_len
-            rearmost       = sorted_buses[-1]           # en düşük pozisyon = en arkada
-            rearmost_rear  = rearmost.position_meters - _BUS_LENGTH
-            rear_space     = rearmost_rear - platform_tail - _SAFE_GAP
-            rear_free      = max(0, min(int(rear_space / _SLOT_SIZE),
-                                        total_capacity - occupied))
+            # [CONVOY] station_fsm.compute_rear_free_slots ile senkron: arka
+            # alanı yalnızca peron İÇİNDEKİ araçlar sınırlar; dışarıdan yaklaşan
+            # docking araçları alanı bloklamaz, birer slot rezerve eder.
+            inside = [v for v in sorted_buses
+                      if v.position_meters - _BUS_LENGTH >= platform_tail - 2.0]
+            reserving = len(sorted_buses) - len(inside)
+            if inside:
+                rearmost_rear = inside[-1].position_meters - _BUS_LENGTH
+                rear_space    = rearmost_rear - platform_tail - _SAFE_GAP
+                base          = max(0, int(rear_space / _SLOT_SIZE))
+            else:
+                base = total_capacity
+            rear_free = max(0, min(base - reserving, total_capacity - occupied))
         else:
             rear_free = total_capacity
 
@@ -375,6 +432,100 @@ class SmartStop:
             slots.append((occupied + i, 0.0, None))
 
         return slots
+
+    # ──────────────────────────────────────────────────────────────
+    # [SKIP-STOP] Talep-Farkındalı Atlama Kararı
+    # ──────────────────────────────────────────────────────────────
+
+    def _should_skip(
+        self,
+        bus: SimVehicle,
+        rec: SpeedRecommendation,
+        following: List[SimVehicle],
+        sim_time: float,
+        current_hour: float,
+    ) -> bool:
+        """Kullanıcı politikası: skip = congestion VE düşük talep VE güvence.
+
+        Kapılar (hepsi geçilmeli):
+          1. Talep verisi mevcut + durak atlanabilir (terminal değil)
+          2. Araç 'cruising' fazında (FSM bayrağı bu fazda tüketir)
+          3. Öngörülen kuyruk ≥ SKIP_MIN_QUEUE (congestion gerçekten var)
+          4. Durak o saatte koridorun DÜŞÜK talep diliminde (İBB verisi) —
+             Mecidiyeköy gibi yoğun duraklar bu kapıdan asla geçemez
+          5. Durak yakın zamanda atlanmadı (cooldown)
+          6. Arkadan ≤ SKIP_FOLLOWER_MAX_GAP içinde başka araç geliyor —
+             atlanan durağın yolcuları kısa sürede araç görür
+        """
+        if self.demand is None or not getattr(self.demand, "available", False):
+            return False
+        if not self.skip_allowed:
+            return False
+        if bus.phase != "cruising" or bus.skip_next_stop:
+            return False
+        if rec.projected_queue < SKIP_MIN_QUEUE:
+            return False
+
+        rec.demand_rate = self.demand.rate(self.stop.index, current_hour)
+        if not self.demand.is_low_demand(self.stop.index, current_hour):
+            return False
+
+        if sim_time - self._last_skip_time < SKIP_STATION_COOLDOWN:
+            return False
+
+        if not following:
+            return False
+        follower_eta = compute_eta(
+            self.zone_end - following[0].position_meters,
+            following[0].speed, self.approach_distance, self.comfort_braking,
+        )
+        gap = follower_eta - rec.eta_to_stop
+        if gap < 0 or gap > SKIP_FOLLOWER_MAX_GAP:
+            return False
+
+        return True
+
+    # ──────────────────────────────────────────────────────────────
+    # Kuyruk Pozisyonu
+    # ──────────────────────────────────────────────────────────────
+
+    def _queue_position(
+        self,
+        bus: SimVehicle,
+        releases: List[float],
+    ) -> Tuple[float, float, int]:
+        """[QUEUE-POS] Aracın kuyruk pozisyonunu ve ona göre ETA'sını hesapla.
+
+        Durak bir KUYRUK olarak modellenir: varış anında hâlâ dolu/rezerve
+        olan n slot varsa araç sabit peron önüne değil n slot arkasına
+        (zone_end − n·_SLOT_SIZE) kenetlenir. n ile ETA karşılıklı bağımlı
+        (mesafe kısalır → ETA kısalır → varışta dolu slot sayısı artabilir)
+        → sabit-nokta iterasyonu. ETA kısaldıkça n yalnızca ARTABİLİR
+        (monoton), bu yüzden salınım olmaz ve en çok len(releases) adımda
+        yakınsar.
+
+        Returns:
+            (dock_distance, eta, n_ahead)
+            dock_distance — kenetlenme noktasına mesafe (m, ≥1)
+            eta           — bu mesafeye kinematik ETA (sn)
+            n_ahead       — varış anında hâlâ dolu/rezerve slot sayısı
+        """
+        distance = max(self.zone_end - bus.position_meters, 1.0)
+        eta = compute_eta(distance, bus.speed,
+                          self.approach_distance, self.comfort_braking)
+        n_ahead = 0
+        for _ in range(len(releases) + 1):
+            n_new = sum(1 for r in releases if r > eta)
+            if n_new == n_ahead:
+                break
+            n_ahead = n_new
+            distance = max(
+                self.zone_end - n_ahead * _SLOT_SIZE - bus.position_meters,
+                1.0,
+            )
+            eta = compute_eta(distance, bus.speed,
+                              self.approach_distance, self.comfort_braking)
+        return distance, eta, n_ahead
 
     # ──────────────────────────────────────────────────────────────
     # Kost-Fayda Analizi + Hız Önerisi
@@ -396,43 +547,37 @@ class SmartStop:
         3. Cascade + downstream maliyeti hesapla
         4. En kârlı seçeneği seç
         """
-        distance = self.zone_end - bus.position_meters
+        # ── 1. Slot durumu + kuyruk pozisyonu ─────────────────────
+        capacity       = max(self.stop.slot_count, 1)
+        # Dolu/rezerve slotların boşalma anları (boş slotlar ft=0 → hariç)
+        releases       = ([ft for (_sid, ft, _vid) in slot_timeline if ft > 1e-9]
+                          if slot_timeline else [])
+        slot_free_time = min(releases) if releases else 0.0
 
-        # ── 1. Gecikme bütçesi kontrolü ───────────────────────────
-        # Öneri şoföre ulaşıp uygulandığında araç bu kadar daha ilerlemiş olur
-        effective_distance = distance - bus.speed * TOTAL_DELAY_BUDGET
+        # [QUEUE-POS] ETA sabit peron önüne (zone_end) DEĞİL, aracın kuyruk
+        # pozisyonuna ölçülür: varış anında hâlâ dolu/rezerve n slot varsa
+        # kenetlenme noktası n slot geridedir (öndeki araçların arkası).
+        dock_distance, eta, n_ahead = self._queue_position(bus, releases)
+
+        # ── 2. Gecikme bütçesi kontrolü ───────────────────────────
+        # Öneri şoföre ulaşıp uygulandığında araç bu kadar daha ilerlemiş
+        # olur; mesafe kenetlenme noktasına göredir (sabit ön değil).
+        effective_distance = dock_distance - bus.speed * TOTAL_DELAY_BUDGET
 
         if effective_distance < MIN_EFFECTIVE_DISTANCE:
             return SpeedRecommendation(
                 vehicle_id=bus.id, speed_factor=1.0,
                 source="none", reason="too_close",
-                eta_to_stop=0.0, ideal_arrival=0.0,
+                eta_to_stop=eta, ideal_arrival=0.0,
                 queue_time_avoided=0.0, net_benefit=0.0,
                 stop_index=self.stop.index,
             )
-
-        # ── 2. Slot durumu ────────────────────────────────────────
-        if not slot_timeline:
-            return SpeedRecommendation(
-                vehicle_id=bus.id, speed_factor=1.0,
-                source="none", reason="on_time",
-                eta_to_stop=0.0, ideal_arrival=0.0,
-                queue_time_avoided=0.0, net_benefit=0.0,
-                stop_index=self.stop.index,
-            )
-
-        capacity       = max(self.stop.slot_count, 1)
-        # Dolu/rezerve slotların boşalma anları (boş slotlar ft=0 → hariç)
-        releases       = [ft for (_sid, ft, _vid) in slot_timeline if ft > 1e-9]
-        slot_free_time = min(releases) if releases else 0.0
 
         # ── 3. Peron DOLU değilse → kuyruk yok, akıp geçer ─────────
         # Arkadan erişilebilir boş slot var: yeni gelen otobüs beklemeden
-        # arkadaki ilk boş slota kenetlenir. Önceki SABİT-peron modeli bu
-        # durumda da "erken geldin" deyip gereksiz yavaşlatabiliyordu (kusur).
+        # kuyruk pozisyonundaki boş slota kenetlenir. Önceki SABİT-peron
+        # modeli bu durumda da "erken geldin" deyip gereksiz yavaşlatabiliyordu.
         if len(releases) < capacity:
-            eta = compute_eta(distance, bus.speed,
-                              self.approach_distance, self.comfort_braking)
             return SpeedRecommendation(
                 vehicle_id=bus.id, speed_factor=1.0,
                 source="none", reason="on_time",
@@ -463,6 +608,7 @@ class SmartStop:
                 eta_to_stop=eta, ideal_arrival=ideal_arrival,
                 queue_time_avoided=0.0, net_benefit=0.0,
                 stop_index=self.stop.index,
+                projected_queue=queue_time,
             )
 
         # ── 5. Kost-Fayda Analizi ─────────────────────────────────
@@ -494,6 +640,10 @@ class SmartStop:
                 queue_time_avoided=queue_time,
                 net_benefit=net_benefit,
                 stop_index=self.stop.index,
+                cascade_cost=cascade_cost,
+                downstream_cost=downstream_cost,
+                intervention_cost=intervention_cost,
+                projected_queue=queue_time,
             )
 
         # [FIX-3] Cascade yoksa bile: queue_time eşiği aştıysa müdahale et
@@ -510,6 +660,10 @@ class SmartStop:
                 queue_time_avoided=queue_time,
                 net_benefit=queue_time - MIN_QUEUE_TO_INTERVENE,
                 stop_index=self.stop.index,
+                cascade_cost=cascade_cost,
+                downstream_cost=downstream_cost,
+                intervention_cost=intervention_cost,
+                projected_queue=queue_time,
             )
 
         # Queue kabul etmek daha kârlı (küçük, kısa süreli bekleme)
@@ -519,6 +673,10 @@ class SmartStop:
             eta_to_stop=eta, ideal_arrival=ideal_arrival,
             queue_time_avoided=0.0, net_benefit=net_benefit,
             stop_index=self.stop.index,
+            cascade_cost=cascade_cost,
+            downstream_cost=downstream_cost,
+            intervention_cost=intervention_cost,
+            projected_queue=queue_time,
         )
 
     def _compute_speed_factor(
@@ -651,12 +809,14 @@ def build_smart_stops(
     approach_distance: float = 150.0,
     comfort_braking: float = 3.5,
     max_speed: float = 25.0,
+    demand=None,
 ) -> List[SmartStop]:
     """
     Bir rota için SmartStop listesi oluştur.
 
     Her durağın zone_start'ı bir önceki durağın pozisyonudur.
     İlk durak için zone_start = 0.0 kullanılır.
+    [SKIP-STOP] Terminaller (ilk/son durak) atlanamaz.
     """
     smart_stops: List[SmartStop] = []
     for i, stop in enumerate(stops):
@@ -668,5 +828,7 @@ def build_smart_stops(
             approach_distance=approach_distance,
             comfort_braking=comfort_braking,
             max_speed=max_speed,
+            demand=demand,
+            skip_allowed=(0 < i < len(stops) - 1),
         ))
     return smart_stops

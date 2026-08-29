@@ -10,7 +10,6 @@ from .route_data import LinearRoute, LinearStop, load_route
 from .controller import (
     HeadwayModel,
     HeadwayState,
-    PIDController,
     ControlMerger,
     ControlCommand,
 )
@@ -28,7 +27,6 @@ __all__ = [
     # Controller
     "HeadwayModel",
     "HeadwayState",
-    "PIDController",
     "ControlMerger",
     "ControlCommand",
 ]

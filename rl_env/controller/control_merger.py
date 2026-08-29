@@ -21,13 +21,11 @@ from typing import Dict, List, Optional, Tuple
 try:
     from ..config import SimVehicle
     from .headway_model import HeadwayModel, HeadwayState
-    from .pid_controller import PIDController
     from .stop_interface import StopInterface
     from .smart_stop import SmartStop, SpeedRecommendation, DwellRecommendation, build_smart_stops, MIN_SPEED_FACTOR
 except ImportError:
     from config import SimVehicle
     from headway_model import HeadwayModel, HeadwayState
-    from pid_controller import PIDController
     from stop_interface import StopInterface
     from smart_stop import SmartStop, SpeedRecommendation, DwellRecommendation, build_smart_stops, MIN_SPEED_FACTOR
 
@@ -53,6 +51,14 @@ _KMH_PER_MS: float = 3.6
 BAND_EMA_TAU_S: float = 2.5    # gereken hızın yumuşatma zaman sabiti (s)
 BAND_MIN_HOLD_S: float = 8.0   # bir band en az bu kadar tutulur (s)
 BAND_ESCAPE_KMH: float = 8.0   # bu kadar büyük sapmada hold'u atla (acil değişim)
+
+# ── Kontrol karar frekansı (fizikten ayrık) ──────────────────────
+# Fizik/FSM/güvenlik 10 Hz koşar (DT=0.1) ama kost-fayda + dock projeksiyonu
+# her tick yeniden hesaplanmaz. Şoför ~3s'de tepki verir ve ETA/queue_time
+# saniyeler ölçeğinde değişir → SmartStop güncellemesi 1 Hz yeter. Aradaki
+# tick'lerde son öneriler tutulur (zero-order hold); band yumuşatma ve forward
+# safety yine her tick çalışır.
+CONTROL_INTERVAL_S: float = 1.0
 
 
 def _snap_kmh(v_kmh: float) -> float:
@@ -82,6 +88,10 @@ class ControlCommand:
     queue_time_avoided: float = 0.0
     net_benefit: float = 0.0
     overflow_risk: float = 0.0
+    # Karar-anı counterfactual maliyet kırılımı (A=kuyruk vs B=yavaşla)
+    cascade_cost: float = 0.0
+    downstream_cost: float = 0.0
+    intervention_cost: float = 0.0
 
     # Sürücüye verilen hız bandı (km/h) — 0.0 = aktif band yok
     band_low: float = 0.0
@@ -97,7 +107,6 @@ class ControlMerger:
 
     Parametreler:
         headway_model:   Headway hesaplama (yalnızca metrik / dashboard)
-        pid:             Yalnızca dashboard'da kazanç gösterimi için
         min_gap:         Minimum takip mesafesi (m) — güvenlik katmanı
         vehicle_length:  Araç boyu (m)
         comfort_braking: SmartStop ETA/fren modeli — fizik motoruyla aynı olmalı
@@ -108,7 +117,6 @@ class ControlMerger:
     def __init__(
         self,
         headway_model: HeadwayModel,
-        pid: Optional[PIDController] = None,
         min_gap: float = 25.0,
         vehicle_length: float = 20.0,
         comfort_braking: float = 3.5,
@@ -116,7 +124,6 @@ class ControlMerger:
         approach_distance: float = 150.0,
     ) -> None:
         self.headway_model     = headway_model
-        self.pid               = pid
         self.min_gap           = min_gap
         self.vehicle_length    = vehicle_length
         self.comfort_braking   = comfort_braking
@@ -131,9 +138,12 @@ class ControlMerger:
         # Sim zamanı
         self._sim_time: float = 0.0
 
-        # Son SmartStop önerileri (dashboard için)
+        # Son SmartStop önerileri (dashboard için + tick'ler arası zero-order hold)
         self._last_rec_map: dict = {}
         self._last_dwell_map: Dict[int, DwellRecommendation] = {}
+
+        # SmartStop güncellemesinin en son çalıştığı sim zamanı (1 Hz throttle)
+        self._last_control_time: float = float("-inf")
 
         # Araç başına taahhüt edilen hız bandı durumu.
         # {"low", "high": km/h band kenarları; "commit_time": band'in verildiği
@@ -160,12 +170,20 @@ class ControlMerger:
         """
         # ── SmartStop sistemi lazy init ───────────────────────────
         if not self._stops_initialized and stops:
+            # [SKIP-STOP] Talep modeli (İBB turnike verisi) — dosya yoksa
+            # DemandModel.available=False kalır ve hiçbir durak atlanmaz.
+            try:
+                from ..demand import DemandModel
+            except ImportError:
+                from demand import DemandModel
+            self._demand = DemandModel()
             self._smart_stops = build_smart_stops(
                 stops=stops,
                 interface=self._interface,
                 approach_distance=self.approach_distance,
                 comfort_braking=self.comfort_braking,
                 max_speed=self.max_speed,
+                demand=self._demand,
             )
             self._stops_initialized = True
 
@@ -174,18 +192,27 @@ class ControlMerger:
         fleet_metrics   = self.headway_model.compute_fleet_metrics(headway_states)
         headway_map: Dict[int, HeadwayState] = {hs.vehicle_id: hs for hs in headway_states}
 
-        # ── SmartStop güncellemeleri (her tick, tüm duraklar) ─────
-        # Her durak yalnızca kendi bölgesine bakar → O(N_durak × 1-2)
-        rec_map: Dict[int, SpeedRecommendation] = {}
-        dwell_map: Dict[int, DwellRecommendation] = {}
-        for smart_stop in self._smart_stops:
-            recs, dwell_recs = smart_stop.update(vehicles, is_rush_hour, self._sim_time)
-            for rec in recs:
-                rec_map[rec.vehicle_id] = rec
-            for drec in dwell_recs:
-                dwell_map[drec.vehicle_id] = drec
-        self._last_rec_map = rec_map
-        self._last_dwell_map = dwell_map
+        # ── SmartStop güncellemeleri (1 Hz, fizikten ayrık throttle) ──
+        # Kost-fayda + dock projeksiyonu pahalı ve saniyeler ölçeğinde değişir;
+        # her tick (10 Hz) yeniden hesaplamak gereksiz. CONTROL_INTERVAL_S'de bir
+        # tüm durakları güncelle, aradaki tick'lerde son önerileri tut
+        # (zero-order hold). Her durak yalnızca kendi bölgesine bakar → O(N_durak × 1-2).
+        if self._sim_time - self._last_control_time >= CONTROL_INTERVAL_S - 1e-9:
+            rec_map: Dict[int, SpeedRecommendation] = {}
+            dwell_map: Dict[int, DwellRecommendation] = {}
+            for smart_stop in self._smart_stops:
+                recs, dwell_recs = smart_stop.update(
+                    vehicles, is_rush_hour, self._sim_time, current_hour)
+                for rec in recs:
+                    rec_map[rec.vehicle_id] = rec
+                for drec in dwell_recs:
+                    dwell_map[drec.vehicle_id] = drec
+            self._last_rec_map = rec_map
+            self._last_dwell_map = dwell_map
+            self._last_control_time = self._sim_time
+        else:
+            rec_map = self._last_rec_map
+            dwell_map = self._last_dwell_map
 
         # ── Her araç için ControlCommand üret ────────────────────
         commands: List[ControlCommand] = []
@@ -243,6 +270,29 @@ class ControlMerger:
                 reason="stationary",
                 headway_error=headway_error,
                 headway_cv=headway_cv,
+            )
+
+        # [SKIP-STOP] Talep-farkındalı atlama: yalnızca öneri HÂLÂ aracın
+        # güncel hedef durağı içinse uygula (1 Hz zero-order hold, FSM bayrağı
+        # tükettikten sonra bayat öneri YENİ durağı atlatmasın diye stop_index
+        # eşitliği şart).
+        if (rec is not None and rec.skip
+                and vehicle.phase == "cruising"
+                and rec.stop_index == vehicle.next_stop_index):
+            self._band_state.pop(vehicle.id, None)
+            return ControlCommand(
+                vehicle_id=vehicle.id,
+                hold_time=0.0,
+                speed_factor=1.0,
+                skip_stop=True,
+                source="smart_stop",
+                reason="skip",
+                headway_error=headway_error,
+                headway_cv=headway_cv,
+                eta_to_stop=rec.eta_to_stop,
+                ideal_arrival=rec.ideal_arrival,
+                queue_time_avoided=rec.projected_queue,
+                net_benefit=rec.net_benefit,
             )
 
         if rec is None or rec.source == "none":
@@ -307,6 +357,9 @@ class ControlMerger:
             ideal_arrival=rec.ideal_arrival,
             queue_time_avoided=rec.queue_time_avoided,
             net_benefit=rec.net_benefit,
+            cascade_cost=rec.cascade_cost,
+            downstream_cost=rec.downstream_cost,
+            intervention_cost=rec.intervention_cost,
             band_low=band_low,
             band_high=band_high,
         )
@@ -461,7 +514,6 @@ class ControlMerger:
             "target_headway": self.headway_model.target_headway,
             "target_headway_min": self.headway_model.target_headway_minutes,
             "smart_stops_active": len(self._smart_stops),
-            "pid_gains": self.pid.get_gains() if self.pid else {},
         }
 
     def get_stop_interface_states(self) -> dict:
@@ -537,12 +589,11 @@ class ControlMerger:
     def reset(self) -> None:
         """Tüm katmanların durumunu sıfırla (yeni episode)."""
         self.headway_model.reset()
-        if self.pid:
-            self.pid.reset()
         self._interface.reset()
         self._smart_stops = []
         self._stops_initialized = False
         self._sim_time = 0.0
+        self._last_control_time = float("-inf")
         self._last_rec_map = {}
         self._last_dwell_map = {}
         self._band_state = {}

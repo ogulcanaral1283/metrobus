@@ -83,6 +83,13 @@ class SimVehicle:
     trip_completed_count: int = 0        # tamamlanan sefer sayısı
     trip_last_duration: float = 0.0      # son seferin toplam süresi (sn)
 
+    # === Yaklaşma kaybı ölçümü (durak ziyareti başına) ===
+    # Bir durak ziyaretinde "müdahale anından kapı açılmaya kadar" geçen süreyi
+    # iki senaryoda ölçer: A=kuyruğa girişten, B=motorun ilk yavaşlatmasından.
+    visit_stop_idx: int = -1             # ölçümün bağlı olduğu hedef durak (-1 = yok)
+    visit_queue_start: float = -1.0      # bu ziyarette kuyruğa giriş sim_time'ı (-1 = girmedi)
+    visit_slow_start: float = -1.0       # bu ziyarette motorun ilk yavaşlatma sim_time'ı (-1 = yok)
+
     def copy(self) -> SimVehicle:
         """Shallow copy."""
         return SimVehicle(
@@ -107,6 +114,9 @@ class SimVehicle:
             trip_total_dwell_time=self.trip_total_dwell_time,
             trip_completed_count=self.trip_completed_count,
             trip_last_duration=self.trip_last_duration,
+            visit_stop_idx=self.visit_stop_idx,
+            visit_queue_start=self.visit_queue_start,
+            visit_slow_start=self.visit_slow_start,
         )
 
 
