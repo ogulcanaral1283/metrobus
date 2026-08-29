@@ -1,0 +1,18 @@
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Segment: Beylikdüzü Sondurak -> Mecidiyeköy (36 durak, 37242m)
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Segment: Beylikdüzü Sondurak -> Mecidiyeköy (36 durak, 37242m)
+Segment: Beylikdüzü Sondurak -> Mecidiyeköy  |  200 araç  |  seed 42  |  saat 8:00  |  7200 sim-sn
+Trafik özdeş kaldı mı: EVET
+Motor AÇIK kolda skip: 82 atlama (415 sefer kaydı; KAPALI: 391)
+
+TAM SEFER SÜRELERİ (ilk parçalı sefer hariç, sn):
+  Motor KAPALI : n=191  ort= 3786.9  medyan= 3788.9  p95= 3919.5
+  Motor AÇIK   : n=215  ort= 3535.0  medyan= 3547.6  p95= 3609.5
+
+EŞLEŞTİRİLMİŞ KARŞILAŞTIRMA (191 araç, k'inci sefer k'inci seferle):
+  Ort. sefer farkı  : +247.6 sn/sefer (+6.54%)  [pozitif = motor AÇIK hızlı]
+  Medyan fark       : +241.0 sn
+  AÇIK'ın kazandığı : 191/191 araç (100%)
+
+Araç bazlı tablo: segment_test_s42.csv

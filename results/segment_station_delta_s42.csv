@@ -1,0 +1,37 @@
+stop_index,stop_name,n_paired,mean_cum_saving_s,median_cum_saving_s
+0,Beylikdüzü Sondurak,390,222.3,234.2
+1,Beykent,388,219.4,228.2
+2,Cumhuriyet Mahallesi,383,218.3,231.5
+3,Beylikdüzü Belediye,379,218.8,234.9
+4,Beylikdüzü,377,217.2,222.6
+5,Güzelyurt,372,213.6,216.0
+6,Haramidere,368,209.2,211.3
+7,Haramidere Sanayi,364,206.7,207.6
+8,Saadetdere Mahallesi,360,204.4,207.2
+9,Mustafa Kemalpaşa,355,197.2,203.7
+10,Cihangir - Üniv.mah.,338,114.2,110.9
+11,Avcılar Merkez-Üniversite Kampüsü,332,116.8,114.2
+12,Şükrübey,330,115.9,112.2
+13,Büyükşehir Belediyesi Sosyal Tesisleri,324,119.3,118.3
+14,Küçükçekmece,318,119.9,115.2
+15,Cennet Mahallesi,311,119.2,116.2
+16,Florya,308,121.4,119.1
+17,Beşyol,305,122.8,120.3
+18,Sefaköy,301,122.0,118.7
+19,Yenibosna,292,121.1,122.3
+20,Şirinevler,288,120.7,120.2
+21,Bahçelievler,282,119.2,118.9
+22,İncirli,277,117.3,116.6
+23,Zeytinburnu,271,114.6,111.4
+24,Merter,268,112.5,107.7
+25,Cevizlibağ,258,183.0,175.6
+26,Topkapı - Şehit Mustafa Cambaz,227,368.8,377.7
+27,Bayrampaşa - Maltepe / Koç Üniversitesi Hastanesi,225,355.1,377.2
+28,Edirnekapı,220,354.9,377.3
+29,Ayvansaray Eyüpsultan,215,351.0,378.5
+30,Halıcıoğlu,211,352.1,380.1
+31,Okmeydanı,205,351.2,377.0
+32,Darülaceze - Perpa,202,349.8,373.0
+33,Okmeydanı Hastane Metrobüs durağı,198,351.2,373.2
+34,Çağlayan,195,347.5,369.2
+35,Mecidiyeköy,193,345.8,363.3

@@ -1,0 +1,32 @@
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+================================================================
+A/B TEST SONUCU — Analitik Motor AÇIK vs KAPALI
+================================================================
+  Araç: 200 | seed: 44 | warm-up: 300s | ölçüm: 1800s | örnek: 180
+  Başlangıç konumları özdeş mi (A==B): EVET
+  Trafik özdeş mi (A==B): EVET
+----------------------------------------------------------------
+  Metrik                      KAPALI        AÇIK      İyileşme
+----------------------------------------------------------------
+  Headway CV (ort)            2.6799      2.4722         +7.8%
+  Headway CV (p95)             3.463       3.136
+  Bunching (ort)              90.394      78.817        +12.8%
+  Mean headway (sn)            60.96       56.94
+  Sefer kuyruk (sn)             59.3        28.9        +51.3%
+  Sefer süresi (sn)           1058.1      1041.0         +1.6%
+  Tamamlanan sefer                72          71
+================================================================
+  (İyileşme: pozitif = motor AÇIK daha iyi — metrik düştü)
+================================================================
+YAKLAŞMA KAYBI — müdahaleden kapı açılmaya kadar (durak ziyareti başına)
+----------------------------------------------------------------
+                              KAPALI        AÇIK
+  A kuyruk ort (sn)             53.0        44.8
+  A kuyruk olay                  518         438
+  B yavaşla ort (sn)             0.0        22.9
+  B yavaşla olay                   0        2435
+================================================================
+  (Motor AÇIK: kuyruk olayları B-yavaşlama olaylarına dönüşür;
+   kuyruğa giren araç sayısı düşerken yolda yumuşak yavaşlama artar.)
+================================================================

@@ -1,0 +1,37 @@
+[A/B] seed 42 (1/5) kosuluyor...
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+      -> CV 2.536->2.477 (+2.3%) | bunching +11.9% | kuyruk +50.6% | trafik OK
+[A/B] seed 43 (2/5) kosuluyor...
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+      -> CV 2.678->2.578 (+3.7%) | bunching +10.9% | kuyruk +20.2% | trafik OK
+[A/B] seed 44 (3/5) kosuluyor...
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+      -> CV 2.762->2.444 (+11.5%) | bunching +13.8% | kuyruk +41.7% | trafik OK
+[A/B] seed 45 (4/5) kosuluyor...
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+      -> CV 2.533->2.368 (+6.5%) | bunching +14.1% | kuyruk +47.6% | trafik OK
+[A/B] seed 46 (5/5) kosuluyor...
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+[SIM] Durak kalibrasyonu: 43/44 durak platform'a hizalandi
+      -> CV 2.500->2.407 (+3.7%) | bunching +12.1% | kuyruk +48.0% | trafik OK
+========================================================================
+COK-SEED A/B SONUCU  (n=5 seed: [42, 43, 44, 45, 46])
+========================================================================
+  Arac: 200 | warm-up: 300s | olcum: 1800s | ornek araligi: 10s
+  Tum kosularda trafik ozdes (A==B): EVET
+------------------------------------------------------------------------
+  Metrik                    KAPALI (m+/-s)        ACIK (m+/-s)    Iyilesme
+------------------------------------------------------------------------
+  Headway CV              2.602+/-0.101      2.455+/-0.072     +5.5%
+  Bunching               89.087+/-1.923     77.902+/-2.220    +12.6%
+  Sefer kuyruk (sn)      65.140+/-3.144     38.260+/-8.851    +41.6%
+  Sefer suresi (sn)    1074.880+/-15.479  1070.000+/-9.648     +0.4%
+  Mean headway (sn)       60.56+/-0.78       56.41+/-1.16   
+  Tamamlanan sefer                72.8                72.4
+========================================================================
+  (Iyilesme: pozitif = motor ACIK daha iyi; +/- = seed'ler arasi std)
+========================================================================
