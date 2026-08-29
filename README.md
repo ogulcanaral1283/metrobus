@@ -1,10 +1,10 @@
 # Istanbul Metrobus — Akıllı Durak-Slot Kontrol Sistemi
 
-İstanbul metrobüs hattı (52 km, 44 durak/yön) için gerçek zamanlı simülasyon ve analitik hız kontrol sistemi.
+İstanbul metrobüs hattı (52 km, 44 durak/yön) için geliştirdiğimiz gerçek zamanlı simülasyon ve analitik hız kontrol sistemi.
 
 ## Problem
 
-Metrobüs hattında *bus bunching* — araçların kümelenerek büyük boşluklar oluşturması — kronik bir sorundur. Geleneksel headway düzeltme yaklaşımları semptoma odaklanır. Bu sistem problemi kaynağında çözer: **durak slot taşmasını önleyerek yığılmayı engeller**.
+Metrobüs hattında *bus bunching* — araçların kümelenerek büyük boşluklar oluşturması — kronik bir sorun. Literatürdeki headway düzeltme yaklaşımları semptoma odaklanıyor; biz problemi kaynağında ele aldık: **durak slot taşmasını önleyerek yığılmayı engelliyoruz**.
 
 ## Mimari
 
@@ -108,9 +108,9 @@ S = durak sayısı (44), N = araç sayısı. N arttıkça ağır hesap sabit kal
 | `packages/shared/` | Rota geometrisi, durak koordinatları, OSM verileri |
 | `packages/dashboard/` | React izleme paneli |
 
-## Hızlı Başlangıç
+## Çalıştırma
 
-### Docker (önerilen)
+### Docker ile
 
 ```bash
 git clone https://github.com/ogulcanaral1283/metrobus.git
@@ -121,7 +121,7 @@ docker compose up
 - Dashboard: http://localhost:3000
 - WebSocket: ws://localhost:8765
 
-### Geliştirme
+### Geliştirme ortamında
 
 ```bash
 # Simülasyon sunucusu
@@ -165,19 +165,20 @@ metrobus/
 
 ## Rota Verisi
 
-OpenStreetMap Overpass API'den alınmış:
+Rota geometrisini ve platform poligonlarını OpenStreetMap'ten (Overpass API) çektik:
 
 - **44 durak** (yön başına) — Beylikdüzü (TÜYAP) → Söğütlüçeşme
 - **Hat uzunluğu** ~52 km (çift yön, lineerleştirilmiş)
-- Gidiş + dönüş yönleri; platform poligonlarından slot sayıları
+- Gidiş + dönüş yönleri; slot sayılarını platform uzunluklarından hesaplıyoruz
 
 ## Talep Verisi
 
-İBB Açık Veri Portalı — Saatlik Toplu Ulaşım Veri Seti (BELBİM):
-durak × saat yolcu matrisi (`rl_env/data/station_demand_hourly.csv`).
-Ayrıntı ve yeniden üretim adımları: `data_ibb/README.md`.
+Skip-stop kararları için İBB Açık Veri Portalı'ndaki Saatlik Toplu Ulaşım
+Veri Seti'nden (BELBİM) kendi çıkardığımız durak × saat yolcu matrisini
+kullanıyoruz (`rl_env/data/station_demand_hourly.csv`). Nasıl ürettiğimiz
+`data_ibb/README.md` içinde.
 
-## Tech Stack
+## Kullandığımız Teknolojiler
 
 - **Simülasyon:** Python 3.11, asyncio, websockets, numpy
 - **Frontend:** React 18, Vite, Leaflet, recharts
