@@ -42,3 +42,6 @@ venv/
 
 # Python egg
 *.egg-info/
+
+# Test kosu loglari repo icinde kalsin
+!results/*.log

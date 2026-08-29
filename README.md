@@ -1,6 +1,6 @@
 # Istanbul Metrobus — Akıllı Durak-Slot Kontrol Sistemi
 
-İstanbul metrobüs hattı (52 km, 45 durak) için gerçek zamanlı simülasyon ve analitik hız kontrol sistemi.
+İstanbul metrobüs hattı (52 km, 44 durak/yön) için gerçek zamanlı simülasyon ve analitik hız kontrol sistemi.
 
 ## Problem
 
@@ -11,18 +11,20 @@ Metrobüs hattında *bus bunching* — araçların kümelenerek büyük boşlukl
 ```
 sim_server.py (Python WebSocket :8765)
     │
-    ├── Fizik Motoru (20 Hz)
-    │       StationFSM  — araç faz geçişleri
+    ├── Fizik Motoru (10 Hz)
+    │       StationFSM  — araç faz geçişleri + peron giriş kuralları
     │       ForwardSafety — çarpışma önleme
     │
-    └── Analitik Kontrol Motoru
+    └── Analitik Kontrol Motoru (1 Hz karar, zero-order hold)
             HeadwayModel    — ODE tabanlı headway dinamiği (metrik)
-            SmartStop × 45  — durak bölgesi yöneticisi
+            SmartStop × 44  — durak bölgesi yöneticisi + skip-stop
             StopInterface   — duraklar arası koordinasyon
+            DemandModel     — İBB turnike verisinden durak×saat talebi
 
 packages/dashboard (React + Nginx :3000)
     WebSocket ile sim_server'a bağlanır
-    Leaflet harita, araç izleme, motor inceleme paneli
+    Leaflet harita, araç izleme, motor inceleme, durak kuyruk paneli,
+    A/B karşılaştırma ekranı, canlı saat seçici
 ```
 
 ## Kontrol Motoru — Matematiksel Özet
@@ -36,9 +38,15 @@ d ≤ d_approach:  ETA = d / (v_entry/2)
 v_entry = min(v, sqrt(2 · a_c · d_approach))
 ```
 
+**Kuyruk pozisyonu** — ETA sabit peron önüne değil, aracın kenetlenme noktasına ölçülür:
+```
+d = (zone_end − n·20.5) − pos      n = varışta hâlâ dolu/rezerve slot sayısı
+```
+n ile ETA karşılıklı bağımlı → sabit-nokta iterasyonu (n monoton artar, salınımsız yakınsar).
+
 **Gecikme bütçesi:**
 ```
-d_eff = d - v · 7.5          (hesaplama + iletişim + sürücü + araç tepkisi)
+d_eff = d - v · 3.0          (hesaplama + iletişim + sürücü + araç tepkisi)
 ```
 
 **Kost-Fayda Analizi:**
@@ -61,6 +69,18 @@ net_benefit > 0  →  YAVAŞLA
 P_down(s) = congestion(s+1)·1.0 + congestion(s+2)·0.6
 ```
 
+**Talep-farkındalı skip-stop** — kuyruk öngörülen ve o saatte düşük talepli
+duraklar atlanabilir. Altı kapının hepsi geçilmeli:
+```
+1. talep verisi mevcut + durak terminal değil
+2. araç cruising fazında
+3. öngörülen kuyruk ≥ 8 sn                (congestion gerçek)
+4. λ_s(saat) ≤ koridorun %30 yüzdeliği    (İBB turnike verisi — Mecidiyeköy asla geçemez)
+5. aynı durak 120 sn içinde atlanmadı
+6. arkadan ≤ 180 sn içinde başka araç var (yolcu güvencesi)
+```
+Atlayan araç slot rezerve etmez → boşalan slot arkadakilere kalır.
+
 ## Hesaplama Karmaşıklığı
 
 Her simülasyon tick'inde:
@@ -71,15 +91,20 @@ Her simülasyon tick'inde:
 | SmartStop filtreleme | O(S × N) — hafif pozisyon karşılaştırması |
 | Kost-fayda analizi | O(S × 2) — bölge başına ~2 araç |
 
-S = durak sayısı (45), N = araç sayısı. N arttıkça ağır hesap sabit kalır.
+S = durak sayısı (44), N = araç sayısı. N arttıkça ağır hesap sabit kalır.
 
 ## Paketler
 
 | Paket | Açıklama |
 |-------|----------|
 | `sim_server.py` | Simülasyon ve kontrol motoru (Python WebSocket) |
-| `rl_env/controller/` | SmartStop, HeadwayModel, StopInterface, ControlMerger |
+| `ab_test.py` | Eşleştirilmiş A/B çerçevesi — bit-özdeş trafik, motor AÇIK/KAPALI |
+| `segment_trip_test.py` | Araç-bazlı sefer süresi deneyi (Beylikdüzü→Mecidiyeköy) |
+| `rl_env/controller/` | SmartStop, DockProjection, HeadwayModel, StopInterface, ControlMerger |
 | `rl_env/station_fsm.py` | Araç faz makinesi (cruising → approaching → docking → ...) |
+| `rl_env/demand.py` | İBB turnike verisinden durak×saat talep modeli |
+| `data_ibb/` | İBB açık veri hattı: indirme/süzme/görselleştirme script'leri |
+| `results/` | Tüm A/B ve segment koşularının logları/CSV'leri |
 | `packages/shared/` | Rota geometrisi, durak koordinatları, OSM verileri |
 | `packages/dashboard/` | React izleme paneli |
 
@@ -113,20 +138,26 @@ npm run dev
 ```
 metrobus/
 ├── sim_server.py               # Ana simülasyon + WS sunucusu
+├── ab_test.py                  # Eşleştirilmiş A/B test çerçevesi (motor AÇIK/KAPALI)
+├── segment_trip_test.py        # Segment sefer süresi deneyi (Beylikdüzü→Mecidiyeköy)
 ├── rl_env/
 │   ├── config.py               # SimVehicle, sabitler
 │   ├── route_data.py           # LinearStop, rota yapıları
-│   ├── station_fsm.py          # Araç faz makinesi
+│   ├── station_fsm.py          # Araç faz makinesi (peron giriş kuralları dahil)
+│   ├── demand.py               # İBB turnike verisinden durak talep modeli
+│   ├── data/                   # Rota + platform + talep verileri
 │   └── controller/
-│       ├── smart_stop.py       # Durak bölgesi kontrol motoru
+│       ├── smart_stop.py       # Durak bölgesi kontrol motoru + skip-stop
+│       ├── dock_projection.py  # Uzay-zaman kuyruk projeksiyonu
 │       ├── stop_interface.py   # Duraklar arası iletişim
-│       ├── control_merger.py   # Komut birleştirici
-│       ├── headway_model.py    # Headway ODE modeli
-│       ├── pid_controller.py   # Stub (aktif değil)
+│       ├── control_merger.py   # Komut birleştirici + hız bandları
+│       ├── headway_model.py    # Headway ODE modeli (metrik)
 │       └── station_arrival_scheduler.py  # ETA / dwell yardımcıları
 ├── packages/
 │   ├── shared/                 # Rota geometrisi, durak verileri
-│   └── dashboard/              # React dashboard
+│   └── dashboard/              # React dashboard (kuyruk paneli, A/B ekranı)
+├── data_ibb/                   # İBB açık veri hattı (talep matrisi + görseller)
+├── results/                    # A/B ve segment test logları/CSV'leri
 ├── Dockerfile                  # Dashboard image (Node → Nginx)
 ├── Dockerfile.python           # sim_server image
 └── docker-compose.yml          # sim-server :8765 + dashboard :3000
@@ -136,9 +167,15 @@ metrobus/
 
 OpenStreetMap Overpass API'den alınmış:
 
-- **45 durak** — Beylikdüzü (TÜYAP) → Söğütlüçeşme
-- **Hat uzunluğu** ~25 km (lineerleştirilmiş)
-- Gidiş + dönüş yönleri
+- **44 durak** (yön başına) — Beylikdüzü (TÜYAP) → Söğütlüçeşme
+- **Hat uzunluğu** ~52 km (çift yön, lineerleştirilmiş)
+- Gidiş + dönüş yönleri; platform poligonlarından slot sayıları
+
+## Talep Verisi
+
+İBB Açık Veri Portalı — Saatlik Toplu Ulaşım Veri Seti (BELBİM):
+durak × saat yolcu matrisi (`rl_env/data/station_demand_hourly.csv`).
+Ayrıntı ve yeniden üretim adımları: `data_ibb/README.md`.
 
 ## Tech Stack
 
